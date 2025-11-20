@@ -4,7 +4,6 @@ mailhelper is a lightweight whatsapp integration layer built on top of [baileys]
 
 ## requirements
 
-- node >= 22
 - php >= 8.1
 
 ## installation
@@ -43,32 +42,40 @@ php mailhelper \
 require_once __DIR__ . '/vendor/autoload.php';
 use vielhuber\mailhelper\mailhelper;
 
-// fetch messages
-mailhelper::run([
-    'device' => 'xxxxxxxxxxxx',
-    'action' => 'fetch_messages'
+// receive emails
+mailhelper::fetch(
+    mailbox: 'xxx@tld.com',
+    folder: 'INBOX/foo/bar',
+    filter: [
+        'from' => date('Y-m-d H:i:s', strtotime('now - 1 hour')),
+        'to' => date('Y-m-d H:i:s', strtotime('now')),
+        'subject' => 'pattern',
+        'message' => 'pattern'
+    ],
+    limit: 42
 ]);
 
-// send messages
-mailhelper::run([
-    'device' => 'xxxxxxxxxxxx',
-    'action' => 'send_user',
-    'number' => 'xxxxxxxxxxxx',
-    'message' => 'This is a test! 🚀'
-]);
-mailhelper::run([
-    'device' => 'xxxxxxxxxxxx',
-    'action' => 'send_group',
-    'name' => 'Group name',
-    'message' => 'This is a test! 🚀'
+// get folders
+mailhelper::getFolders(
+    mailbox: 'xxx@tld.com'
 ]);
 
-// send attachments
-mailhelper::run([
-    'device' => 'xxxxxxxxxxxx',
-    'action' => 'send_user', // or 'send_group'
-    /* ... */
-    'attachments' => ['/full/path/to/file.pdf', '/full/path/to/image.png']
+// send email
+mailhelper::send(
+    mailbox: 'xxx@tld.com',
+    subject: 'This is a test! 🚀',
+    message: '✅ Test <strong>successful</strong>!',
+    to: 'aaa@tld.com',
+    to: ['aaa@tld.com', 'bbb@tld.com'],
+    to: [['name' => 'John Doe', 'email' => 'aaa@tld.com'], ['name' => 'Jane Doe', 'email' => 'bbb@tld.com']],
+    cc: 'aaa@tld.com',
+    bcc: 'aaa@tld.com',
+    attachments: __DIR__ . '/test1.jpg',
+    attachments: [__DIR__ . '/test1.jpg', __DIR__ . '/test2.jpg'],
+    attachments: [
+        ['name' => 'foo1.jpg', 'file' => __DIR__ . '/test1.jpg'],
+        ['name' => 'foo2.jpg', 'file' => __DIR__ . '/test2.jpg']
+    ]
 ]);
 ```
 
@@ -77,9 +84,9 @@ mailhelper::run([
 ```
 {
     "mcpServers": {
-        "whatsapp": {
-            "command": "/root/.nvm/versions/node/v22.20.0/bin/node",
-            "args": ["/var/www/project/node_modules/@vielhuber/mailhelper/WhatsApp.js", "--mcp"]
+        "email": {
+            "command": "/usr/bin/php8.3",
+            "args": ["/var/www/project/vendor/vielhuber/mailhelper/src/mcp.php"]
         }
     }
 }
