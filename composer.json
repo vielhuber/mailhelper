@@ -1,0 +1,13 @@
+{
+    "name": "vielhuber/mailhelper",
+    "description": "Lightweight email integration layer.",
+    "require": {
+        "php": ">=8.1"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "vielhuber\\mailhelper\\": ""
+        }
+    }
+}
