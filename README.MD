@@ -18,6 +18,46 @@ composer require vielhuber/mailhelper
 cp config.example.json config.json
 ```
 
+```json
+{
+    "info@example.com": {
+        "imap": {
+            "host": "imap.example.com",
+            "port": 993,
+            "username": "info@example.com",
+            "password": "secret123",
+            "encryption": "ssl"
+        },
+        "smtp": {
+            "host": "smtp.example.com",
+            "port": 465,
+            "username": "info@example.com",
+            "password": "secret123",
+            "encryption": "ssl",
+            "from_name": "David Vielhuber"
+        }
+    },
+    "support@company.com": {
+        "imap": {
+            "host": "outlook.office365.com",
+            "port": 993,
+            "client_id": "***",
+            "client_secret": "***",
+            "tenant_id": "***",
+            "encryption": "tls"
+        },
+        "smtp": {
+            "host": "smtp.company.com",
+            "port": 465,
+            "username": "support@company.com",
+            "password": "secret456",
+            "encryption": "ssl",
+            "from_name": "David Vielhuber"
+        }
+    }
+}
+```
+
 ## usage
 
 ### cli
@@ -34,10 +74,10 @@ cp config.example.json config.json
     --filter-cc "pattern" \
     --filter-bcc "pattern" \
     --limit 42 \
-    --with-attachments \
+    --with-attachments
 
 ./vendor/bin/mailhelper folders
-    --mailbox "xxx@tld.com" \
+    --mailbox "xxx@tld.com"
 
 ./vendor/bin/mailhelper send
     --mailbox "xxx@tld.com" \
@@ -50,8 +90,7 @@ cp config.example.json config.json
     --bcc "aaa@tld.com", \
     --attachments: "/test1.jpg", \
     --attachments: '["/test1.jpg", "/test2.jpg"]', \
-    --attachments: '[["name": "foo1.jpg", "file": "/test1.jpg"],["name": "foo2.jpg", "file": "/test2.jpg"]'
-    ]
+    --attachments: '[["name": "foo1.jpg", "file": "/test1.jpg"],["name": "foo2.jpg", "file": "/test2.jpg"]]'
 ```
 
 ### php
@@ -73,7 +112,7 @@ mailhelper::fetch(
         'bcc' => 'pattern',
     ],
     limit: 42,
-order: 'asc',
+    order: 'asc',
     with_attachments: false
 ]);
 
