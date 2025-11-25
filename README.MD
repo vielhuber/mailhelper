@@ -8,11 +8,13 @@ mailhelper is a lightweight email integration layer on top of [phpmailer](https:
 
 ## installation
 
+### composer
+
 ```sh
 composer require vielhuber/mailhelper
 ```
 
-## config
+### config
 
 ```sh
 cp config.example.json config.json
@@ -140,7 +142,7 @@ mailhelper::send(
 
 ### mcp
 
-```
+```json
 {
     "mcpServers": {
         "email": {
