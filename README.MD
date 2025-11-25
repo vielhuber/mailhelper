@@ -27,14 +27,14 @@ cp config.example.json config.json
             "host": "imap.example.com",
             "port": 993,
             "username": "info@example.com",
-            "password": "secret123",
+            "password": "***",
             "encryption": "ssl"
         },
         "smtp": {
             "host": "smtp.example.com",
             "port": 465,
             "username": "info@example.com",
-            "password": "secret123",
+            "password": "***",
             "encryption": "ssl",
             "from_name": "David Vielhuber"
         }
@@ -52,7 +52,7 @@ cp config.example.json config.json
             "host": "smtp.company.com",
             "port": 465,
             "username": "support@company.com",
-            "password": "secret456",
+            "password": "***",
             "encryption": "ssl",
             "from_name": "David Vielhuber"
         }
