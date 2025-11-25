@@ -1,0 +1,37 @@
+{
+    "info@example.com": {
+        "imap": {
+            "host": "imap.example.com",
+            "port": 993,
+            "username": "info@example.com",
+            "password": "secret123",
+            "encryption": "ssl"
+        },
+        "smtp": {
+            "host": "smtp.example.com",
+            "port": 465,
+            "username": "info@example.com",
+            "password": "secret123",
+            "encryption": "ssl",
+            "from_name": "David Vielhuber"
+        }
+    },
+    "support@company.com": {
+        "imap": {
+            "host": "outlook.office365.com",
+            "port": 993,
+            "client_id": "***",
+            "client_secret": "***",
+            "tenant_id": "***",
+            "encryption": "tls"
+        },
+        "smtp": {
+            "host": "smtp.company.com",
+            "port": 465,
+            "username": "support@company.com",
+            "password": "secret456",
+            "encryption": "ssl",
+            "from_name": "David Vielhuber"
+        }
+    }
+}

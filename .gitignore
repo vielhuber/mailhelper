@@ -2,3 +2,4 @@
 /package-lock.json
 /vendor/
 /composer.lock
+/config.json

@@ -4,12 +4,16 @@
     "require": {
         "php": ">=8.1",
         "php-mcp/server": "^3.3",
-        "phpmailer/phpmailer": "^7.0"
+        "phpmailer/phpmailer": "^7.0",
+        "webklex/php-imap": "^6.2"
     },
     "license": "MIT",
     "autoload": {
         "psr-4": {
-            "vielhuber\\mailhelper\\": ""
+            "vielhuber\\mailhelper\\": "src/"
         }
-    }
+    },
+    "bin": [
+        "src/mailhelper.php"
+    ]
 }

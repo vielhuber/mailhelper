@@ -1,6 +1,6 @@
 # 📫 mailhelper 📫
 
-mailhelper is a lightweight whatsapp integration layer built on top of [baileys](https://github.com/WhiskeySockets/Baileys) that provides a simple cli, php wrapper, and mcp server for fetching messages, sending direct and group messages, and wiring whatsapp into existing tooling (wordpress, node, mcp clients) without having to deal with the full session lifecycle yourself.
+mailhelper is a lightweight email integration layer on top of [phpmailer](https://github.com/PHPMailer/PHPMailer) and [php-imap](https://github.com/Webklex/php-imap) that provides a simple cli, php wrapper, and mcp server for fetching messages, sending emails, and wiring email functionality into existing tooling without having to deal with complex imap/smtp configuration yourself.
 
 ## requirements
 
@@ -12,28 +12,46 @@ mailhelper is a lightweight whatsapp integration layer built on top of [baileys]
 composer require vielhuber/mailhelper
 ```
 
+## config
+
+```sh
+cp config.example.json config.json
+```
+
 ## usage
 
 ### cli
 
 ```sh
-php mailhelper \
-    --disable-warning=ExperimentalWarning \
-    --device "xxxxxxxxxxxx" \
-    ...
+./vendor/bin/mailhelper fetch \
+    --mailbox "xxx@tld.com" \
+    --folder "INBOX/foo/bar" \
+    --filter-date-from "YYYY-MM-DD HH:II:SS" \
+    --filter-date-until "YYYY-MM-DD HH:II:SS" \
+    --filter-subject "pattern" \
+    --filter-message "pattern" \
+    --filter-to "pattern" \
+    --filter-cc "pattern" \
+    --filter-bcc "pattern" \
+    --limit 42 \
+    --with-attachments \
 
-    --action "send_user" \
-    --number "xxxxxxxxxxxx" \
-    --message "This is a test! 🚀"
+./vendor/bin/mailhelper folders
+    --mailbox "xxx@tld.com" \
 
-    --action "send_group" \
-    --name "Group name" \
-    --message "This is a test! 🚀"
-
-    --action "send_user" \
-    --number "xxxxxxxxxxxx" \
-    --message "This is a test! 🚀" \
-    --attachments="/full/path/to/file.pdf,/full/path/to/image.png"
+./vendor/bin/mailhelper send
+    --mailbox "xxx@tld.com" \
+    --subject: "This is a test! 🚀", \
+    --message: "✅ Test <strong>successful</strong>!", \
+    --to "aaa@tld.com", \
+    --to '["aaa@tld.com", "bbb@tld.com"]', \
+    --to '[["name": "John Doe", "email": "aaa@tld.com"], ["name": "Jane Doe", "email": "bbb@tld.com"]]', \
+    --cc "aaa@tld.com", \
+    --bcc "aaa@tld.com", \
+    --attachments: "/test1.jpg", \
+    --attachments: '["/test1.jpg", "/test2.jpg"]', \
+    --attachments: '[["name": "foo1.jpg", "file": "/test1.jpg"],["name": "foo2.jpg", "file": "/test2.jpg"]'
+    ]
 ```
 
 ### php
@@ -42,25 +60,27 @@ php mailhelper \
 require_once __DIR__ . '/vendor/autoload.php';
 use vielhuber\mailhelper\mailhelper;
 
-// receive emails
 mailhelper::fetch(
     mailbox: 'xxx@tld.com',
     folder: 'INBOX/foo/bar',
     filter: [
-        'from' => date('Y-m-d H:i:s', strtotime('now - 1 hour')),
-        'to' => date('Y-m-d H:i:s', strtotime('now')),
+        'date_from' => date('Y-m-d H:i:s', strtotime('now - 1 hour')),
+        'date_until' => date('Y-m-d H:i:s', strtotime('now')),
         'subject' => 'pattern',
         'message' => 'pattern'
+        'to' => 'pattern',
+        'cc' => 'pattern',
+        'bcc' => 'pattern',
     ],
-    limit: 42
+    limit: 42,
+order: 'asc',
+    with_attachments: false
 ]);
 
-// get folders
-mailhelper::getFolders(
+mailhelper::folders(
     mailbox: 'xxx@tld.com'
 ]);
 
-// send email
 mailhelper::send(
     mailbox: 'xxx@tld.com',
     subject: 'This is a test! 🚀',
@@ -85,7 +105,7 @@ mailhelper::send(
 {
     "mcpServers": {
         "email": {
-            "command": "/usr/bin/php8.3",
+            "command": "/usr/bin/php8.1",
             "args": ["/var/www/project/vendor/vielhuber/mailhelper/src/mcp.php"]
         }
     }
