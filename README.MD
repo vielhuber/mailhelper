@@ -157,10 +157,10 @@ mailhelper::view(
 mailhelper::edit(
     mailbox: 'xxx@tld.com',
     folder: 'INBOX/foo/bar',
-    id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
-    move: 'INBOX/foo/bar'
-    delete: true
-    read: true
+    id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+    move: 'INBOX/foo/bar',
+    delete: true,
+    read: true,
     unread: true
 ]);
 
