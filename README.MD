@@ -78,7 +78,7 @@ cp config.example.json config.json
     --limit 42 \
     --order "desc"
 
-./vendor/bin/mailhelper send
+./vendor/bin/mailhelper send \
     --mailbox "xxx@tld.com" \
     --subject "This is a test! 🚀" \
     --message "✅ Test <strong>successful</strong>!" \
@@ -91,21 +91,21 @@ cp config.example.json config.json
     --attachments: '["/test1.jpg", "/test2.jpg"]' \
     --attachments: '[["name": "foo1.jpg", "file": "/test1.jpg"],["name": "foo2.jpg", "file": "/test2.jpg"]]'
 
-./vendor/bin/mailhelper folders
+./vendor/bin/mailhelper folders \
     --mailbox "xxx@tld.com"
 
-./vendor/bin/mailhelper view
-    --mailbox "xxx@tld.com"
+./vendor/bin/mailhelper view \
+    --mailbox "xxx@tld.com" \
     --folder "INBOX/foo/bar" \
     --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
-./vendor/bin/mailhelper edit
-    --mailbox "xxx@tld.com"
+./vendor/bin/mailhelper edit \
+    --mailbox "xxx@tld.com" \
     --folder "INBOX/foo/bar" \
-    --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-    --move "INBOX/foo/bar"
-    --delete
-    --read
+    --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+    --move "INBOX/foo/bar" \
+    --delete \
+    --read \
     --unread
 ```
 
