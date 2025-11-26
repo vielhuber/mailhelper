@@ -76,23 +76,37 @@ cp config.example.json config.json
     --filter-cc "pattern" \
     --filter-bcc "pattern" \
     --limit 42 \
-    --with-attachments
+    --order "desc"
+
+./vendor/bin/mailhelper send
+    --mailbox "xxx@tld.com" \
+    --subject "This is a test! 🚀" \
+    --message "✅ Test <strong>successful</strong>!" \
+    --to "aaa@tld.com" \
+    --to '["aaa@tld.com", "bbb@tld.com"]' \
+    --to '[["name": "John Doe", "email": "aaa@tld.com"], ["name": "Jane Doe", "email": "bbb@tld.com"]]' \
+    --cc "aaa@tld.com" \
+    --bcc "aaa@tld.com" \
+    --attachments: "/test1.jpg" \
+    --attachments: '["/test1.jpg", "/test2.jpg"]' \
+    --attachments: '[["name": "foo1.jpg", "file": "/test1.jpg"],["name": "foo2.jpg", "file": "/test2.jpg"]]'
 
 ./vendor/bin/mailhelper folders
     --mailbox "xxx@tld.com"
 
-./vendor/bin/mailhelper send
-    --mailbox "xxx@tld.com" \
-    --subject: "This is a test! 🚀", \
-    --message: "✅ Test <strong>successful</strong>!", \
-    --to "aaa@tld.com", \
-    --to '["aaa@tld.com", "bbb@tld.com"]', \
-    --to '[["name": "John Doe", "email": "aaa@tld.com"], ["name": "Jane Doe", "email": "bbb@tld.com"]]', \
-    --cc "aaa@tld.com", \
-    --bcc "aaa@tld.com", \
-    --attachments: "/test1.jpg", \
-    --attachments: '["/test1.jpg", "/test2.jpg"]', \
-    --attachments: '[["name": "foo1.jpg", "file": "/test1.jpg"],["name": "foo2.jpg", "file": "/test2.jpg"]]'
+./vendor/bin/mailhelper view
+    --mailbox "xxx@tld.com"
+    --folder "INBOX/foo/bar" \
+    --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+./vendor/bin/mailhelper edit
+    --mailbox "xxx@tld.com"
+    --folder "INBOX/foo/bar" \
+    --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    --move "INBOX/foo/bar"
+    --delete
+    --read
+    --unread
 ```
 
 ### php
@@ -114,12 +128,7 @@ mailhelper::fetch(
         'bcc' => 'pattern',
     ],
     limit: 42,
-    order: 'asc',
-    with_attachments: false
-]);
-
-mailhelper::folders(
-    mailbox: 'xxx@tld.com'
+    order: 'asc'
 ]);
 
 mailhelper::send(
@@ -138,6 +147,23 @@ mailhelper::send(
         ['name' => 'foo2.jpg', 'file' => __DIR__ . '/test2.jpg']
     ]
 ]);
+
+mailhelper::view(
+    mailbox: 'xxx@tld.com',
+    folder: 'INBOX/foo/bar',
+    id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+]);
+
+mailhelper::edit(
+    mailbox: 'xxx@tld.com',
+    folder: 'INBOX/foo/bar',
+    id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+    move: 'INBOX/foo/bar'
+    delete: true
+    read: true
+    unread: true
+]);
+
 ```
 
 ### mcp

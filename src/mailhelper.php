@@ -40,8 +40,8 @@ class mailhelper
 
             // parse action
             $action = $args[1] ?? null;
-            if (!in_array($action, ['fetch', 'folders', 'send'])) {
-                echo "Usage: mailhelper [fetch|folders|send] [options]\n";
+            if (!in_array($action, ['fetch', 'folders', 'send', 'edit', 'view'])) {
+                echo "Usage: mailhelper [fetch|send|folders|view|edit] [options]\n";
                 die();
             }
 
@@ -102,13 +102,8 @@ class mailhelper
                         folder: $options['folder'] ?? null,
                         filter: !empty($filter) ? $filter : null,
                         limit: isset($options['limit']) ? (int) $options['limit'] : 100,
-                        order: $options['order'] ?? null,
-                        with_attachments: $options['with-attachments'] ?? false
+                        order: $options['order'] ?? null
                     );
-                }
-
-                if ($action === 'folders') {
-                    $response = mailhelper::folders(mailbox: $options['mailbox'] ?? null);
                 }
 
                 if ($action === 'send') {
@@ -122,6 +117,31 @@ class mailhelper
                         attachments: $attachments
                     );
                 }
+
+                if ($action === 'folders') {
+                    $response = mailhelper::folders(mailbox: $options['mailbox'] ?? null);
+                }
+
+                if ($action === 'view') {
+                    $response = mailhelper::view(
+                        mailbox: $options['mailbox'] ?? null,
+                        folder: $options['folder'] ?? null,
+                        id: $options['id'] ?? null
+                    );
+                }
+
+                if ($action === 'edit') {
+                    $response = mailhelper::edit(
+                        mailbox: $options['mailbox'] ?? null,
+                        folder: $options['folder'] ?? null,
+                        id: $options['id'] ?? null,
+                        move: $options['move'] ?? null,
+                        delete: isset($options['delete']) ? (bool) $options['delete'] : null,
+                        read: isset($options['read']) ? (bool) $options['read'] : null,
+                        unread: isset($options['unread']) ? (bool) $options['unread'] : null
+                    );
+                }
+
                 if ($response !== null) {
                     self::output_recursively($response);
                     die();
@@ -146,6 +166,7 @@ class mailhelper
             if ($key !== null) {
                 echo $key . ' ::: ';
             }
+
             if (is_bool($data)) {
                 if ($data === true) {
                     echo '✅';
@@ -153,15 +174,17 @@ class mailhelper
                 if ($data === false) {
                     echo '⛔';
                 }
-            }
-            if (is_string($data)) {
+            } elseif (is_string($data)) {
                 $data = str_replace("\r\n", ' ', $data);
-                if (mb_strlen($data) > 30) {
-                    echo mb_substr($data, 0, 30) . '...';
+                if (mb_strlen($data) > 50) {
+                    echo mb_substr($data, 0, 50) . '...';
                 } else {
                     echo $data;
                 }
+            } else {
+                echo $data;
             }
+
             echo "\n";
         }
     }
@@ -255,14 +278,8 @@ class mailhelper
      * @return int The sum of the two numbers
      */
     #[McpTool(name: 'fetch_emails')]
-    public static function fetch(
-        $mailbox = null,
-        $folder = null,
-        $filter = null,
-        $limit = 100,
-        $order = null,
-        $with_attachments = null
-    ) {
+    public static function fetch($mailbox = null, $folder = null, $filter = null, $limit = 100, $order = null)
+    {
         self::parse_config();
         self::validate_input('fetch', get_defined_vars());
         $settings = self::setup_settings($mailbox);
@@ -281,22 +298,37 @@ class mailhelper
                 continue;
             }
 
-            $query = $folders__value->messages()->setFetchOrder($order_str)->all();
-            $page = 0;
+            $query = $folders__value->messages();
+            $query->setFetchBody(false);
+            $query->setFetchOrder($order_str);
+            $query->all();
+            $page = 1;
             while (true) {
-                $paginator = $query->paginate(20, $page, 'imap_page');
+                $paginator_limit = 20;
+                if ($limit !== null && $limit < $paginator_limit) {
+                    $paginator_limit = $limit;
+                }
+                $paginator = $query->paginate($paginator_limit, $page, 'imap_page');
 
                 if ($paginator->count() === 0) {
                     break;
                 }
 
-                foreach ($paginator as $messages__value) {
+                // convert iterator to array
+                $messages = iterator_to_array($paginator);
+
+                // reorder (this is somewhat unexpected behaviour)
+                if ($order_str === 'desc') {
+                    $messages = array_values(array_reverse($messages));
+                }
+
+                foreach ($messages as $messages__value) {
                     if (self::check_filter($filter, $messages__value) === false) {
                         continue;
                     }
 
                     $mail = [];
-                    $mail['id'] = $messages__value->getMessageId()[0];
+                    $mail['id'] = $messages__value->getUid();
                     $mail['from_name'] = $messages__value->getFrom()[0]->personal;
                     $mail['from_email'] = $messages__value->getFrom()[0]->mail;
                     $mail['to'] = $messages__value->getTo()[0]->mail;
@@ -320,9 +352,7 @@ class mailhelper
                     $mail['content_html'] = $messages__value->getHTMLBody();
                     $mail['content_plain'] = $messages__value->getTextBody();
 
-                    if ($with_attachments === true) {
-                        $mail['attachments'] = $messages__value->getAttachments();
-                    }
+                    $mail['attachments'] = $messages__value->getAttachments();
 
                     // embed images
                     $attachments = $messages__value->getAttachments();
@@ -359,10 +389,6 @@ class mailhelper
         if (self::is_cli()) {
             echo PHP_EOL;
         }
-        // reorder (this is somewhat unexpected behaviour)
-        if ($order_str === 'desc') {
-            $mails = array_values(array_reverse($mails));
-        }
         return $mails;
     }
 
@@ -388,6 +414,11 @@ class mailhelper
             }
             if (!($args['to'] ?? null)) {
                 throw new \Exception('Missing to.');
+            }
+        }
+        if ($action === 'edit') {
+            if (!($args['id'] ?? null)) {
+                throw new \Exception('Missing id.');
             }
         }
     }
@@ -474,6 +505,88 @@ class mailhelper
             $folders[] = $folders_raw__value->full_name;
         }
         return $folders;
+    }
+
+    /**
+     * Get folders.
+     *
+     * @param int $a The first number
+     * @param int $b The second number
+     * @return int The sum of the two numbers
+     */
+    #[McpTool(name: 'edit_email')]
+    public static function edit(
+        $mailbox = null,
+        $folder = null,
+        $id = null,
+        $move = null,
+        $delete = null,
+        $read = null,
+        $unread = null
+    ) {
+        self::parse_config();
+        self::validate_input('edit', get_defined_vars());
+        $settings = self::setup_settings($mailbox);
+
+        $cm = new ClientManager();
+        $client = $cm->make($settings);
+        $client->connect();
+        $folders = $client->getFolders();
+        foreach ($folders as $folders__value) {
+            if ($folder !== null && $folders__value->full_name !== $folder) {
+                continue;
+            }
+            try {
+                $message = $folders__value->messages()->getMessageByUid($id);
+            } catch (\Exception $e) {
+                throw new \Exception('Message id not found: ' . $id);
+            }
+            if ($move !== null) {
+                $message->move($move);
+            }
+            if ($delete === true) {
+                $message->delete();
+            }
+            if ($read === true) {
+                $message->setFlag('Seen');
+            }
+            if ($unread === true) {
+                $message->unsetFlag('Seen');
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Get folders.
+     *
+     * @param int $a The first number
+     * @param int $b The second number
+     * @return int The sum of the two numbers
+     */
+    #[McpTool(name: 'view_email')]
+    public static function view($mailbox = null, $folder = null, $id = null)
+    {
+        self::parse_config();
+        self::validate_input('edit', get_defined_vars());
+        $settings = self::setup_settings($mailbox);
+
+        $cm = new ClientManager();
+        $client = $cm->make($settings);
+        $client->connect();
+        $folders = $client->getFolders();
+        foreach ($folders as $folders__value) {
+            if ($folder !== null && $folders__value->full_name !== $folder) {
+                continue;
+            }
+            try {
+                $message = $folders__value->messages()->getMessageByUid($id);
+            } catch (\Exception $e) {
+                throw new \Exception('Message id not found: ' . $id);
+            }
+            // TODO
+        }
+        return true;
     }
 
     /**
