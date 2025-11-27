@@ -409,7 +409,7 @@ class mailhelper
 
     private static function parse_config()
     {
-        $configPath = __DIR__ . '/../config.json';
+        $configPath = self::get_base_path() . '/config.json';
         if (!file_exists($configPath)) {
             throw new \Exception('Configuration file not found: ' . $configPath);
         }
@@ -418,6 +418,21 @@ class mailhelper
         if (json_last_error() !== JSON_ERROR_NONE) {
             throw new \Exception('Error decoding configuration file: ' . json_last_error_msg());
         }
+    }
+
+    private static function get_base_path()
+    {
+        $path = __DIR__;
+
+        // go up one level (src)
+        $path = dirname($path);
+
+        // if we are inside vendor, go up multiple levels
+        if (strpos($path, '/vendor/') !== false) {
+            $path = dirname(dirname(dirname($path)));
+        }
+
+        return $path;
     }
 
     public static function parse_cli()
@@ -802,8 +817,7 @@ class mailhelper
     private static function check_and_format_attachment($attachment)
     {
         if (!file_exists($attachment)) {
-            // parent directory of current script
-            $attachment = dirname(__DIR__) . '/' . ltrim($attachment, '/');
+            $attachment = self::get_base_path() . '/' . ltrim($attachment, '/');
         }
         if (!file_exists($attachment)) {
             throw new \Exception('Attachment file not found: ' . $attachment);
