@@ -127,7 +127,7 @@ mailhelper::fetch(
     ],
     limit: 42,
     order: 'asc'
-]);
+);
 
 mailhelper::send(
     mailbox: 'xxx@tld.com',
@@ -144,17 +144,17 @@ mailhelper::send(
         ['name' => 'foo1.jpg', 'file' => __DIR__ . '/test1.jpg'],
         ['name' => 'foo2.jpg', 'file' => __DIR__ . '/test2.jpg']
     ]
-]);
+);
 
 mailhelper::folders(
     mailbox: 'xxx@tld.com'
-]);
+);
 
 mailhelper::view(
     mailbox: 'xxx@tld.com',
     folder: 'INBOX/foo/bar',
     id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
-]);
+);
 
 mailhelper::edit(
     mailbox: 'xxx@tld.com',
@@ -164,7 +164,7 @@ mailhelper::edit(
     delete: true,
     read: true,
     unread: true
-]);
+);
 
 ```
 

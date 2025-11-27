@@ -1,5 +1,5 @@
-#!/usr/bin/env php
-<?php namespace vielhuber\mailhelper;
+<?php
+namespace vielhuber\mailhelper;
 
 error_reporting(E_ALL & ~E_DEPRECATED);
 
