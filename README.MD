@@ -65,7 +65,7 @@ vi config.json
 ### cli
 
 ```sh
-./vendor/bin/mailhelper fetch \
+./vendor/bin/mailhelper.php fetch \
     --mailbox "xxx@tld.com" \
     --folder "INBOX/foo/bar" \
     --filter-date-from "YYYY-MM-DD HH:II:SS" \
@@ -77,7 +77,7 @@ vi config.json
     --limit 42 \
     --order "desc"
 
-./vendor/bin/mailhelper send \
+./vendor/bin/mailhelper.php send \
     --mailbox "xxx@tld.com" \
     --subject "This is a test! 🚀" \
     --message "✅ Test <strong>successful</strong>!" \
@@ -90,15 +90,15 @@ vi config.json
     --attachments: '["/test1.jpg", "/test2.jpg"]' \
     --attachments: '[{"name": "foo1.jpg", "file": "/test1.jpg"}, {"name": "foo2.jpg", "file": "/test2.jpg"}]'
 
-./vendor/bin/mailhelper folders \
+./vendor/bin/mailhelper.php folders \
     --mailbox "xxx@tld.com"
 
-./vendor/bin/mailhelper view \
+./vendor/bin/mailhelper.php view \
     --mailbox "xxx@tld.com" \
     --folder "INBOX/foo/bar" \
     --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
-./vendor/bin/mailhelper edit \
+./vendor/bin/mailhelper.php edit \
     --mailbox "xxx@tld.com" \
     --folder "INBOX/foo/bar" \
     --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
