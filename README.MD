@@ -14,10 +14,10 @@ mailhelper is a lightweight email integration layer on top of [phpmailer](https:
 composer require vielhuber/mailhelper
 ```
 
-### config
+### create config
 
 ```sh
-cp config.example.json config.json
+vi config.json
 ```
 
 ```json
