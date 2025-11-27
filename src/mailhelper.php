@@ -3,8 +3,17 @@
 
 error_reporting(E_ALL & ~E_DEPRECATED);
 
-if (file_exists(__DIR__ . '/../vendor/autoload.php')) {
-    require_once __DIR__ . '/../vendor/autoload.php';
+// Autoloader: Try different paths depending on installation method
+$autoloadPaths = [
+    __DIR__ . '/../vendor/autoload.php', // Local development
+    __DIR__ . '/../../../autoload.php', // Installed via Composer (vendor/vielhuber/mailhelper/src)
+    __DIR__ . '/../../../../autoload.php' // Alternative Composer path
+];
+foreach ($autoloadPaths as $autoloadPath) {
+    if (file_exists($autoloadPath)) {
+        require_once $autoloadPath;
+        break;
+    }
 }
 
 use PhpMcp\Server\Attributes\McpTool;
