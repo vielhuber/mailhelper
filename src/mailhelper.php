@@ -798,7 +798,7 @@ class mailhelper
     private static function get_mail_data_basic($message)
     {
         $mail = [];
-        $mail['id'] = $message->getMessageId();
+        $mail['id'] = $message->getMessageId()->toString();
 
         foreach (['from' => 'getFrom', 'to' => 'getTo', 'cc' => 'getCc'] as $fields__key => $fields__value) {
             $mail[$fields__key] = [];
