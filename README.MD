@@ -74,7 +74,6 @@ cp config.example.json config.json
     --filter-message "pattern" \
     --filter-to "pattern" \
     --filter-cc "pattern" \
-    --filter-bcc "pattern" \
     --limit 42 \
     --order "desc"
 
@@ -84,12 +83,12 @@ cp config.example.json config.json
     --message "✅ Test <strong>successful</strong>!" \
     --to "aaa@tld.com" \
     --to '["aaa@tld.com", "bbb@tld.com"]' \
-    --to '[["name": "John Doe", "email": "aaa@tld.com"], ["name": "Jane Doe", "email": "bbb@tld.com"]]' \
+    --to '[{"name": "John Doe", "email": "aaa@tld.com"}, {"name": "Jane Doe", "email": "bbb@tld.com"}]' \
     --cc "aaa@tld.com" \
     --bcc "aaa@tld.com" \
     --attachments: "/test1.jpg" \
     --attachments: '["/test1.jpg", "/test2.jpg"]' \
-    --attachments: '[["name": "foo1.jpg", "file": "/test1.jpg"],["name": "foo2.jpg", "file": "/test2.jpg"]]'
+    --attachments: '[{"name": "foo1.jpg", "file": "/test1.jpg"}, {"name": "foo2.jpg", "file": "/test2.jpg"}]'
 
 ./vendor/bin/mailhelper folders \
     --mailbox "xxx@tld.com"
@@ -124,8 +123,7 @@ mailhelper::fetch(
         'subject' => 'pattern',
         'message' => 'pattern'
         'to' => 'pattern',
-        'cc' => 'pattern',
-        'bcc' => 'pattern',
+        'cc' => 'pattern'
     ],
     limit: 42,
     order: 'asc'
@@ -146,6 +144,10 @@ mailhelper::send(
         ['name' => 'foo1.jpg', 'file' => __DIR__ . '/test1.jpg'],
         ['name' => 'foo2.jpg', 'file' => __DIR__ . '/test2.jpg']
     ]
+]);
+
+mailhelper::folders(
+    mailbox: 'xxx@tld.com'
 ]);
 
 mailhelper::view(
