@@ -35,8 +35,7 @@ vi config.json
             "port": 465,
             "username": "info@example.com",
             "password": "***",
-            "encryption": "ssl",
-            "from_name": "David Vielhuber"
+            "encryption": "ssl"
         }
     },
     "support@company.com": {
@@ -53,8 +52,7 @@ vi config.json
             "port": 465,
             "username": "support@company.com",
             "password": "***",
-            "encryption": "ssl",
-            "from_name": "David Vielhuber"
+            "encryption": "ssl"
         }
     }
 }
@@ -81,6 +79,7 @@ vi config.json
     --mailbox "xxx@tld.com" \
     --subject "This is a test! 🚀" \
     --message "✅ Test <strong>successful</strong>!" \
+    --from-name "John Doe",
     --to "aaa@tld.com" \
     --to '["aaa@tld.com", "bbb@tld.com"]' \
     --to '[{"name": "John Doe", "email": "aaa@tld.com"}, {"name": "Jane Doe", "email": "bbb@tld.com"}]' \
@@ -133,6 +132,7 @@ mailhelper::send(
     mailbox: 'xxx@tld.com',
     subject: 'This is a test! 🚀',
     message: '✅ Test <strong>successful</strong>!',
+    from_name: 'John Doe',
     to: 'aaa@tld.com',
     to: ['aaa@tld.com', 'bbb@tld.com'],
     to: [['name' => 'John Doe', 'email' => 'aaa@tld.com'], ['name' => 'Jane Doe', 'email' => 'bbb@tld.com']],

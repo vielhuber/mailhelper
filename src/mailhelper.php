@@ -112,6 +112,7 @@ class mailhelper
      * @param string $mailbox The sender email address (must be configured in config.json)
      * @param string $subject The email subject
      * @param string $message The email body (HTML supported)
+     * @param string|null $from_name The sender name (overrides config value if set)
      * @param string|array $to Recipient(s): string 'email@example.com' or array [{"name": "John", "email": "john@example.com"}]
      * @param string|array|null $cc CC recipient(s): same format as $to
      * @param string|array|null $bcc BCC recipient(s): same format as $to
@@ -124,6 +125,7 @@ class mailhelper
         $mailbox = null,
         $subject = null,
         $message = null,
+        $from_name = null,
         $to = null,
         $cc = null,
         $bcc = null,
@@ -140,7 +142,7 @@ class mailhelper
             $mail->Username = self::$config[$mailbox]['smtp']['username'] ?? null;
             $mail->Password = self::$config[$mailbox]['smtp']['password'] ?? null;
             $mail->SMTPSecure = self::$config[$mailbox]['smtp']['encryption'] ?? null;
-            $mail->setFrom($mailbox, self::$config[$mailbox]['smtp']['from_name'] ?? '');
+            $mail->setFrom($mailbox, $from_name ?? '');
             $mail->SMTPAuth = true;
             $mail->SMTPOptions = [
                 'tls' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true],
@@ -461,6 +463,7 @@ class mailhelper
             for ($i = 2; $i < count($args); $i++) {
                 if (strpos($args[$i], '--') === 0) {
                     $key = substr($args[$i], 2);
+                    $key = str_replace('-', '_', $key);
                     $value = $args[$i + 1] ?? true;
                     if (is_string($value) && strpos($value, '--') === 0) {
                         $value = true;
@@ -518,6 +521,7 @@ class mailhelper
                     mailbox: $options['mailbox'] ?? null,
                     subject: $options['subject'] ?? null,
                     message: $options['message'] ?? null,
+                    from_name: $options['from_name'] ?? null,
                     to: $to,
                     cc: $cc,
                     bcc: $bcc,
