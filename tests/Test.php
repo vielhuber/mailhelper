@@ -3,6 +3,8 @@ use vielhuber\mailhelper\mailhelper;
 
 class Test extends \PHPUnit\Framework\TestCase
 {
+    protected $sleep = 8;
+
     protected $mailboxes = [];
 
     protected function setUp(): void
@@ -35,7 +37,9 @@ class Test extends \PHPUnit\Framework\TestCase
             $response = mailhelper::createFolder(mailbox: $mailboxes__value, name: $folder_old);
             //$this->log($response);
             $this->assertTrue($response);
-            sleep(3);
+
+            $this->sleep();
+
             $response = mailhelper::getFolders(mailbox: $mailboxes__value);
             //$this->log($response);
             $this->assertTrue(count($response) > 0);
@@ -49,7 +53,9 @@ class Test extends \PHPUnit\Framework\TestCase
             );
             //$this->log($response);
             $this->assertTrue($response);
-            sleep(3);
+
+            $this->sleep();
+
             $response = mailhelper::getFolders(mailbox: $mailboxes__value);
             //$this->log($response);
             $this->assertContains($folder_new, $response);
@@ -92,7 +98,8 @@ class Test extends \PHPUnit\Framework\TestCase
             );
             //$this->log($response);
             $this->assertTrue($response);
-            sleep(5);
+
+            $this->sleep();
 
             // fetchMails
             $response = mailhelper::fetchMails(
@@ -191,6 +198,13 @@ class Test extends \PHPUnit\Framework\TestCase
             }
         }
         return [$folder_inbox, $folder_other];
+    }
+
+    private function sleep()
+    {
+        if ($this->sleep > 0) {
+            sleep($this->sleep);
+        }
     }
 
     private function log($msg)
