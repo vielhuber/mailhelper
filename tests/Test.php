@@ -35,6 +35,7 @@ class Test extends \PHPUnit\Framework\TestCase
             $response = mailhelper::createFolder(mailbox: $mailboxes__value, name: $folder_old);
             //$this->log($response);
             $this->assertTrue($response);
+            sleep(3);
             $response = mailhelper::getFolders(mailbox: $mailboxes__value);
             //$this->log($response);
             $this->assertTrue(count($response) > 0);
@@ -48,6 +49,7 @@ class Test extends \PHPUnit\Framework\TestCase
             );
             //$this->log($response);
             $this->assertTrue($response);
+            sleep(3);
             $response = mailhelper::getFolders(mailbox: $mailboxes__value);
             //$this->log($response);
             $this->assertContains($folder_new, $response);
@@ -57,6 +59,7 @@ class Test extends \PHPUnit\Framework\TestCase
             $response = mailhelper::deleteFolder(mailbox: $mailboxes__value, name: $folder_new);
             //$this->log($response);
             $this->assertTrue($response);
+            sleep(3);
             $response = mailhelper::getFolders(mailbox: $mailboxes__value);
             //$this->log($response);
             $this->assertNotContains($folder_new, $response);
