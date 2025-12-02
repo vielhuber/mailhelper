@@ -129,12 +129,14 @@ class Test extends \PHPUnit\Framework\TestCase
             // readMail
             $response = mailhelper::readMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
             $this->assertTrue($response);
+            $this->sleep();
             $response = mailhelper::viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
             $this->assertSame($response->seen, true);
 
             // unreadMail
             $response = mailhelper::unreadMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
             $this->assertTrue($response);
+            $this->sleep();
             $response = mailhelper::viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
             $this->assertSame($response->seen, false);
 
@@ -146,6 +148,7 @@ class Test extends \PHPUnit\Framework\TestCase
                 name: $folder_other
             );
             $this->assertTrue($response);
+            $this->sleep();
             $this->expectException(\Throwable::class);
             $this->expectExceptionMessageMatches('/not found/i');
             $response = mailhelper::viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
@@ -161,6 +164,7 @@ class Test extends \PHPUnit\Framework\TestCase
             );
             //$this->log($response);
             $this->assertTrue($response);
+            $this->sleep();
 
             $this->expectException(\Throwable::class);
             $this->expectExceptionMessageMatches('/not found/i');
