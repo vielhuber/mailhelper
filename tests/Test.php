@@ -3,7 +3,7 @@ use vielhuber\mailhelper\mailhelper;
 
 class Test extends \PHPUnit\Framework\TestCase
 {
-    protected $sleep = 8;
+    protected $sleep = 10;
 
     protected $mailboxes = [];
 
@@ -125,6 +125,7 @@ class Test extends \PHPUnit\Framework\TestCase
             $this->assertSame($response->subject, $test_subject);
             $this->assertSame($response->content_html, $test_content);
             $this->assertSame($response->content_plain, strip_tags($test_content));
+            $this->sleep();
 
             // readMail
             $response = mailhelper::readMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
