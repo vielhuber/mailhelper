@@ -14,8 +14,8 @@ jobs:
     build-test:
         strategy:
             matrix:
-                operating-system: ['ubuntu-latest']
-                php-versions: ['8.3']
+                operating-system: ['ubuntu-latest', 'macos-latest', 'windows-latest']
+                php-versions: ['7.4', '8.0', '8.1', '8.2', '8.3']
 
         runs-on: ${{ matrix.operating-system }}
 
@@ -28,9 +28,11 @@ jobs:
             - name: Libraries
               run: |
                   if [ "$RUNNER_OS" == "Linux" ]; then
-                       sudo apt-get install coreutils
+                        sudo apt-get install -y coreutils
                   elif [ "$RUNNER_OS" == "macOS" ]; then
-                       brew install coreutils
+                        brew install coreutils
+                  elif [ "$RUNNER_OS" == "Windows" ]; then
+                        choco install important_windows_software
                   fi
               shell: bash
 
