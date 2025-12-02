@@ -1,0 +1,51 @@
+name: CI
+
+env:
+    CI: true
+
+on:
+    workflow_dispatch:
+    push:
+        tags:
+            - 'v*'
+            - '[0-9]*'
+
+jobs:
+    build-test:
+        strategy:
+            matrix:
+                operating-system: ['ubuntu-latest']
+                php-versions: ['8.3']
+
+        runs-on: ${{ matrix.operating-system }}
+
+        name: ${{ matrix.operating-system }} (PHP ${{ matrix.php-versions }})
+
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v3
+
+            - name: Libraries
+              run: |
+                  if [ "$RUNNER_OS" == "Linux" ]; then
+                       sudo apt-get install coreutils
+                  elif [ "$RUNNER_OS" == "macOS" ]; then
+                       brew install coreutils
+                  fi
+              shell: bash
+
+            - name: PHP
+              uses: shivammathur/setup-php@v2
+              with:
+                  php-version: '${{ matrix.php-versions }}'
+                  extensions: gd
+                  tools: composer, phpunit
+
+            - name: Composer
+              run: composer install --no-interaction
+
+            - name: Create config.json from secret
+              run: echo "${{ secrets.CONFIG_JSON_BASE64 }}" | base64 -d > config.json
+
+            - name: PHPUnit
+              run: ./vendor/bin/phpunit

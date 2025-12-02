@@ -1,3 +1,5 @@
+[![build status](https://github.com/vielhuber/mailhelper/actions/workflows/ci.yml/badge.svg)](https://github.com/vielhuber/mailhelper/actions)
+
 # 📫 mailhelper 📫
 
 mailhelper is a lightweight email integration layer on top of [phpmailer](https://github.com/PHPMailer/PHPMailer) and [php-imap](https://github.com/Webklex/php-imap) that provides a simple cli, php wrapper, and mcp server for fetching messages, sending emails, and wiring email functionality into existing tooling without having to deal with complex imap/smtp configuration yourself.
