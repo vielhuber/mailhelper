@@ -98,7 +98,7 @@ class Test extends \PHPUnit\Framework\TestCase
             $response = mailhelper::fetchMails(
                 mailbox: $mailboxes__value,
                 folder: $folder_inbox,
-                limit: 10,
+                limit: 10, // don't limit 10, because other mails can income that disturb the test
                 order: 'desc'
             );
             //$this->log($response);
