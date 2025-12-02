@@ -60,6 +60,10 @@ vi config.json
 }
 ```
 
+### test
+
+`./vendor/bin/phpunit`
+
 ## usage
 
 ### cli
@@ -227,10 +231,6 @@ mailhelper::deleteFolder(
 
 mailhelper::getConfig();
 ```
-
-### tests
-
-`./vendor/bin/phpunit`
 
 ### mcp
 
