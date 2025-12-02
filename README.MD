@@ -63,22 +63,22 @@ vi config.json
 ### cli
 
 ```sh
-./vendor/bin/mailhelper.php fetch \
+./vendor/bin/mailhelper.php fetch-mails \
     --mailbox "xxx@tld.com" \
     --folder "INBOX/foo/bar" \
     --filter-date-from "YYYY-MM-DD HH:II:SS" \
     --filter-date-until "YYYY-MM-DD HH:II:SS" \
     --filter-subject "pattern" \
-    --filter-message "pattern" \
+    --filter-content "pattern" \
     --filter-to "pattern" \
     --filter-cc "pattern" \
     --limit 42 \
     --order "desc"
 
-./vendor/bin/mailhelper.php send \
+./vendor/bin/mailhelper.php send-mail \
     --mailbox "xxx@tld.com" \
     --subject "This is a test! 🚀" \
-    --message "✅ Test <strong>successful</strong>!" \
+    --content "✅ Test <strong>successful</strong>!" \
     --from-name "John Doe",
     --to "aaa@tld.com" \
     --to '["aaa@tld.com", "bbb@tld.com"]' \
@@ -89,22 +89,48 @@ vi config.json
     --attachments: '["/test1.jpg", "/test2.jpg"]' \
     --attachments: '[{"name": "foo1.jpg", "file": "/test1.jpg"}, {"name": "foo2.jpg", "file": "/test2.jpg"}]'
 
-./vendor/bin/mailhelper.php folders \
-    --mailbox "xxx@tld.com"
-
-./vendor/bin/mailhelper.php view \
+./vendor/bin/mailhelper.php view-mail \
     --mailbox "xxx@tld.com" \
     --folder "INBOX/foo/bar" \
     --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 
-./vendor/bin/mailhelper.php edit \
+./vendor/bin/mailhelper.php move-mail \
     --mailbox "xxx@tld.com" \
     --folder "INBOX/foo/bar" \
     --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
-    --move "INBOX/foo/bar" \
-    --delete \
-    --read \
-    --unread
+    --name "INBOX/foo/bar"
+
+./vendor/bin/mailhelper.php delete-mail \
+    --mailbox "xxx@tld.com" \
+    --folder "INBOX/foo/bar" \
+    --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+./vendor/bin/mailhelper.php read-mail \
+    --mailbox "xxx@tld.com" \
+    --folder "INBOX/foo/bar" \
+    --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+./vendor/bin/mailhelper.php unread-mail \
+    --mailbox "xxx@tld.com" \
+    --folder "INBOX/foo/bar" \
+    --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
+./vendor/bin/mailhelper.php get-folders \
+    --mailbox "xxx@tld.com"
+
+./vendor/bin/mailhelper.php create-folder \
+    --mailbox "xxx@tld.com"
+    --name "INBOX/foo"
+
+./vendor/bin/mailhelper.php rename-folder \
+    --mailbox "xxx@tld.com"
+    --name "INBOX/foo"
+
+./vendor/bin/mailhelper.php delete-folder \
+    --mailbox "xxx@tld.com"
+    --name "INBOX/foo"
+
+./vendor/bin/mailhelper.php get-config
 ```
 
 ### php
@@ -113,14 +139,14 @@ vi config.json
 require_once __DIR__ . '/vendor/autoload.php';
 use vielhuber\mailhelper\mailhelper;
 
-mailhelper::fetch(
+mailhelper::fetchMails(
     mailbox: 'xxx@tld.com',
     folder: 'INBOX/foo/bar',
     filter: [
         'date_from' => date('Y-m-d H:i:s', strtotime('now - 1 hour')),
         'date_until' => date('Y-m-d H:i:s', strtotime('now')),
         'subject' => 'pattern',
-        'message' => 'pattern'
+        'content' => 'pattern'
         'to' => 'pattern',
         'cc' => 'pattern'
     ],
@@ -128,10 +154,10 @@ mailhelper::fetch(
     order: 'asc'
 );
 
-mailhelper::send(
+mailhelper::sendMail(
     mailbox: 'xxx@tld.com',
     subject: 'This is a test! 🚀',
-    message: '✅ Test <strong>successful</strong>!',
+    content: '✅ Test <strong>successful</strong>!',
     from_name: 'John Doe',
     to: 'aaa@tld.com',
     to: ['aaa@tld.com', 'bbb@tld.com'],
@@ -146,27 +172,63 @@ mailhelper::send(
     ]
 );
 
-mailhelper::folders(
-    mailbox: 'xxx@tld.com'
-);
-
-mailhelper::view(
+mailhelper::viewMail(
     mailbox: 'xxx@tld.com',
     folder: 'INBOX/foo/bar',
     id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 );
 
-mailhelper::edit(
+mailhelper::moveMail(
     mailbox: 'xxx@tld.com',
     folder: 'INBOX/foo/bar',
     id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
-    move: 'INBOX/foo/bar',
-    delete: true,
-    read: true,
-    unread: true
+    name: 'INBOX/foo/bar'
 );
 
+mailhelper::deleteMail(
+    mailbox: 'xxx@tld.com',
+    folder: 'INBOX/foo/bar',
+    id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+);
+
+mailhelper::readMail(
+    mailbox: 'xxx@tld.com',
+    folder: 'INBOX/foo/bar',
+    id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+);
+
+mailhelper::unreadMail(
+    mailbox: 'xxx@tld.com',
+    folder: 'INBOX/foo/bar',
+    id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+);
+
+mailhelper::getFolders(
+    mailbox: 'xxx@tld.com'
+);
+
+mailhelper::createFolder(
+    mailbox: 'xxx@tld.com'
+    name: 'INBOX/foo'
+);
+
+mailhelper::renameFolder(
+    mailbox: 'xxx@tld.com'
+    name_old: 'INBOX/foo',
+    name_new: 'INBOX/foo'
+);
+
+mailhelper::deleteFolder(
+    mailbox: 'xxx@tld.com'
+    name: 'INBOX/foo'
+);
+
+mailhelper::getConfig();
 ```
+
+### tests
+
+`./vendor/bin/phpunit`
 
 ### mcp
 

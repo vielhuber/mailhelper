@@ -35,11 +35,11 @@ class mailhelper
      * @return array Array of email objects with id, from, to, cc, date, subject
      */
     #[McpTool(name: 'fetch_emails', description: 'Fetch emails from a mailbox with optional filtering and pagination')]
-    public static function fetch($mailbox = null, $folder = null, $filter = null, $limit = 100, $order = null)
+    public static function fetchMails($mailbox = null, $folder = null, $filter = null, $limit = 100, $order = null)
     {
-        self::parse_config();
-        self::validate_input('fetch', get_defined_vars());
-        $settings = self::setup_settings($mailbox);
+        self::parseConfig();
+        self::validateInput('fetchMails', get_defined_vars());
+        $settings = self::setupSettings($mailbox);
 
         $mails = [];
 
@@ -49,60 +49,83 @@ class mailhelper
         $cm = new ClientManager();
         $client = $cm->make($settings);
         $client->connect();
-        $folders = $client->getFolders();
+        $folders = $client->getFolders(false);
         foreach ($folders as $folders__value) {
-            if ($folder !== null && $folders__value->full_name !== $folder) {
-                continue;
+            if ($folder !== null) {
+                if (is_array($folder) && !in_array($folders__value->full_name, $folder)) {
+                    continue;
+                }
+                if (
+                    is_string($folder) &&
+                    $folders__value->full_name !== $folder &&
+                    self::decodeImapUtf7($folders__value->full_name) !== $folder
+                ) {
+                    continue;
+                }
             }
 
-            $query = $folders__value->messages();
-            $query->setFetchBody(false);
-            $query->setFetchOrder($order_str);
+            $query = $folders__value->query();
             $query->all();
+            $query->leaveUnread();
+            $query->setFetchBody(false);
+
+            // this does not work server sided
+            // we therefore have to fetch all mails and limit & sort them by hand
+            $query->setFetchOrder($order_str);
+
             $page = 1;
             while (true) {
                 $paginator_limit = 10;
-                if ($limit !== null && $limit < $paginator_limit) {
-                    $paginator_limit = $limit;
+                try {
+                    $paginator = @$query->paginate($paginator_limit, $page, 'imap_page');
+                } catch (\Throwable $e) {
+                    break;
                 }
-                $paginator = $query->paginate($paginator_limit, $page, 'imap_page');
-
                 if ($paginator->count() === 0) {
                     break;
                 }
 
+                // determine full count
+                $full_count = $paginator->total();
+
                 // convert iterator to array
                 $messages = iterator_to_array($paginator);
 
-                // reorder (this is somewhat unexpected behaviour)
-                if ($order_str === 'desc') {
-                    $messages = array_values(array_reverse($messages));
-                }
-
                 foreach ($messages as $messages__value) {
-                    if (self::check_filter($filter, $messages__value) === false) {
+                    if (self::checkFilter($filter, $messages__value) === false) {
                         continue;
                     }
-
-                    $mail = self::get_mail_data_basic($messages__value);
-
+                    $mail = self::getMailDataBasic($messages__value);
                     $mails[] = $mail;
-                    if ($limit !== null) {
-                        if (self::is_cli()) {
-                            self::progress(count($mails), $limit, 'Fetching emails...');
-                        }
-                        if (count($mails) >= $limit) {
-                            break 3;
-                        }
+                    if (self::isCli()) {
+                        self::progress(count($mails), $full_count, 'Fetching emails...');
                     }
                 }
-
                 $page++;
             }
         }
-        if (self::is_cli()) {
+
+        // apply sort afterwards
+        usort($mails, function ($a, $b) use ($order_str) {
+            if ($order_str === 'asc') {
+                return strtotime($a->date) <=> strtotime($b->date);
+            } else {
+                return strtotime($b->date) <=> strtotime($a->date);
+            }
+        });
+
+        // apply limit afterwards
+        if ($limit !== null) {
+            if (count($mails) > $limit) {
+                $mails = array_slice($mails, 0, $limit);
+            }
+        }
+
+        if (self::isCli()) {
             echo PHP_EOL;
         }
+
+        $client->disconnect();
         return $mails;
     }
 
@@ -121,18 +144,18 @@ class mailhelper
      * @throws \Exception If sending fails
      */
     #[McpTool(name: 'send_email', description: 'Send an email with optional attachments, CC, and BCC recipients')]
-    public static function send(
+    public static function sendMail(
         $mailbox = null,
         $subject = null,
-        $message = null,
+        $content = null,
         $from_name = null,
         $to = null,
         $cc = null,
         $bcc = null,
         $attachments = null
     ) {
-        self::parse_config();
-        self::validate_input('send', get_defined_vars());
+        self::parseConfig();
+        self::validateInput('sendMail', get_defined_vars());
 
         $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
         try {
@@ -175,7 +198,7 @@ class mailhelper
 
             // embed images (base64 and relative urls to cid)
             $images = [];
-            preg_match_all('/src="([^"]*)"/i', $message, $images);
+            preg_match_all('/src="([^"]*)"/i', $content, $images);
             $images = $images[1];
             $images = array_unique($images);
             foreach ($images as $images__value) {
@@ -206,21 +229,21 @@ class mailhelper
                                 trim(substr($images__value, strpos($images__value, 'base64,') + strlen('base64')))
                             )
                         );
-                        $message = str_replace($images__value, 'cid:' . $image_cid, $message);
+                        $content = str_replace($images__value, 'cid:' . $image_cid, $content);
                         $mail->addEmbeddedImage($image_tmp_path, $image_cid);
                     }
 
                     // relative paths
                     elseif (file_exists($image_baseurl . '/' . $images__value)) {
-                        $message = str_replace($images__value, 'cid:' . $image_cid, $message);
+                        $content = str_replace($images__value, 'cid:' . $image_cid, $content);
                         $mail->addEmbeddedImage($image_baseurl . '/' . $images__value, $image_cid);
                     }
                 }
             }
 
             $mail->Subject = $subject;
-            $mail->Body = $message;
-            $mail->AltBody = strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\r\n", $message));
+            $mail->Body = $content;
+            $mail->AltBody = strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\r\n", $content));
             if ($attachments !== null) {
                 if (!is_array($attachments) || isset($attachments['file'])) {
                     $attachments = [$attachments];
@@ -228,7 +251,7 @@ class mailhelper
                 if (!empty($attachments)) {
                     foreach ($attachments as $attachments__value) {
                         if (is_string($attachments__value) && $attachments__value != '') {
-                            $attachments__value = self::check_and_format_attachment($attachments__value);
+                            $attachments__value = self::checkAndFormatAttachment($attachments__value);
                             $mail->addAttachment($attachments__value);
                         } elseif (is_array($attachments__value)) {
                             if (
@@ -237,7 +260,7 @@ class mailhelper
                                 isset($attachments__value['name']) &&
                                 $attachments__value['name'] != ''
                             ) {
-                                $attachments__value['file'] = self::check_and_format_attachment(
+                                $attachments__value['file'] = self::checkAndFormatAttachment(
                                     $attachments__value['file']
                                 );
                                 $mail->addAttachment($attachments__value['file'], $attachments__value['name']);
@@ -246,7 +269,7 @@ class mailhelper
                                 $attachments__value['file'] != '' &&
                                 file_exists($attachments__value['file'])
                             ) {
-                                $attachments__value['file'] = self::check_and_format_attachment(
+                                $attachments__value['file'] = self::checkAndFormatAttachment(
                                     $attachments__value['file']
                                 );
                                 $mail->addAttachment($attachments__value['file']);
@@ -264,77 +287,44 @@ class mailhelper
         }
     }
 
-    /**
-     * Get all folders from a mailbox.
-     *
-     * @param string $mailbox The email address of the mailbox (must be configured in config.json)
-     * @return array Array of folder names (e.g. ['INBOX', 'INBOX/subfolder', 'Sent', 'Trash'])
-     */
-    #[McpTool(name: 'get_folders', description: 'List all available folders in a mailbox')]
-    public static function folders($mailbox = null)
+    public static function viewMail($mailbox = null, $folder = null, $id = null)
     {
-        self::parse_config();
-        self::validate_input('folders', get_defined_vars());
-        $settings = self::setup_settings($mailbox);
+        self::parseConfig();
+        self::validateInput('viewMail', get_defined_vars());
+        $settings = self::setupSettings($mailbox);
 
         $cm = new ClientManager();
         $client = $cm->make($settings);
         $client->connect();
-        $folders_raw = $client->getFolders();
-        $folders = [];
-        foreach ($folders_raw as $folders_raw__value) {
-            $folders[] = $folders_raw__value->full_name;
-        }
-        return $folders;
-    }
+        $folders = $client->getFolders(false);
 
-    /**
-     * View a specific email with full content and attachments.
-     *
-     * @param string $mailbox The email address of the mailbox (must be configured in config.json)
-     * @param string|null $folder The folder containing the email. If null, searches all folders
-     * @param string $id The Message-ID of the email (from fetch response)
-     * @return array|null Email data with id, from, to, cc, date, subject, content_html, content_plain, eml, attachments
-     * @throws \Exception If email not found
-     */
-    #[
-        McpTool(
-            name: 'view_email',
-            description: 'Get full email content including HTML body, plain text, and attachments'
-        )
-    ]
-    public static function view($mailbox = null, $folder = null, $id = null)
-    {
-        self::parse_config();
-        self::validate_input('edit', get_defined_vars());
-        $settings = self::setup_settings($mailbox);
-
-        $cm = new ClientManager();
-        $client = $cm->make($settings);
-        $client->connect();
-        $folders = $client->getFolders();
+        $return = null;
         foreach ($folders as $folders__value) {
-            if ($folder !== null && $folders__value->full_name !== $folder) {
+            if (
+                $folder !== null &&
+                $folders__value->full_name !== $folder &&
+                self::decodeImapUtf7($folders__value->full_name) !== $folder
+            ) {
                 continue;
             }
-            $message = $folders__value->messages()->whereMessageId($id)->get()->first();
+            $message = $folders__value->query()->whereMessageId($id)->get()->first();
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
 
-            $mail = self::get_mail_data_basic($message);
+            $mail = self::getMailDataBasic($message);
 
-            $mail['eml'] =
+            $mail->eml =
                 'data:message/rfc822;base64,' .
                 base64_encode(json_decode(json_encode($message->getHeader()), true)['raw'] . $message->getRawBody());
-            $mail['content_html'] = $message->getHTMLBody();
-            $mail['content_plain'] = $message->getTextBody();
+            $mail->content_html = $message->getHTMLBody();
+            $mail->content_plain = $message->getTextBody();
 
-            $mail['attachments'] = [];
+            $mail->attachments = [];
             $attachments = $message->getAttachments();
             if (!empty($attachments)) {
                 foreach ($attachments as $attachments__value) {
-                    $mail['attachments'][] = [
+                    $mail->attachments[] = (object) [
                         'name' => $attachments__value->getFilename(),
                         'content' =>
                             'data:' .
@@ -348,36 +338,54 @@ class mailhelper
             // embed images
             $attachments = $message->getAttachments();
             foreach ($attachments as $attachments__value) {
-                $mail['content_html'] = str_replace(
+                $mail->content_html = str_replace(
                     'cid:' . $attachments__value->getId(),
                     'data:' .
                         $attachments__value->getMimeType() .
                         ';base64,' .
                         base64_encode($attachments__value->getContent()),
-                    $mail['content_html']
+                    $mail->content_html
                 );
             }
 
-            return $mail;
+            $return = $mail;
+            break;
         }
-        return null;
+
+        $client->disconnect();
+        return $return;
     }
 
-    /**
-     * Edit an email (move, delete, mark as read/unread).
-     *
-     * @param string $mailbox The email address of the mailbox (must be configured in config.json)
-     * @param string|null $folder The folder containing the email. If null, searches all folders
-     * @param string $id The Message-ID of the email (from fetch response)
-     * @param string|null $move Target folder to move the email to (e.g. 'INBOX/Archive')
-     * @param bool|null $delete Set to true to delete the email
-     * @param bool|null $read Set to true to mark the email as read
-     * @param bool|null $unread Set to true to mark the email as unread
-     * @return bool True on success
-     * @throws \Exception If email not found or operation fails
-     */
-    #[McpTool(name: 'edit_email', description: 'Modify an email: move to folder, delete, or change read status')]
-    public static function edit(
+    public static function moveMail($mailbox = null, $folder = null, $id = null, $name = null)
+    {
+        self::parseConfig();
+        self::validateInput('moveMail', get_defined_vars());
+        $settings = self::setupSettings($mailbox);
+
+        $cm = new ClientManager();
+        $client = $cm->make($settings);
+        $client->connect();
+        $folders = $client->getFolders(false);
+        foreach ($folders as $folders__value) {
+            if (
+                $folder !== null &&
+                $folders__value->full_name !== $folder &&
+                self::decodeImapUtf7($folders__value->full_name) !== $folder
+            ) {
+                continue;
+            }
+            $message = $folders__value->query()->whereMessageId($id)->get()->first();
+            if (!$message) {
+                throw new \Exception('Message id not found: ' . $id);
+            }
+            //print_r([$name, self::encodeImapUtf7($name)]);
+            $message->move(self::encodeImapUtf7($name), false, true);
+        }
+        $client->disconnect();
+        return true;
+    }
+
+    public static function deleteMail(
         $mailbox = null,
         $folder = null,
         $id = null,
@@ -386,41 +394,208 @@ class mailhelper
         $read = null,
         $unread = null
     ) {
-        self::parse_config();
-        self::validate_input('edit', get_defined_vars());
-        $settings = self::setup_settings($mailbox);
+        self::parseConfig();
+        self::validateInput('deleteMail', get_defined_vars());
+        $settings = self::setupSettings($mailbox);
 
         $cm = new ClientManager();
         $client = $cm->make($settings);
         $client->connect();
-        $folders = $client->getFolders();
+        $folders = $client->getFolders(false);
         foreach ($folders as $folders__value) {
-            if ($folder !== null && $folders__value->full_name !== $folder) {
+            if (
+                $folder !== null &&
+                $folders__value->full_name !== $folder &&
+                self::decodeImapUtf7($folders__value->full_name) !== $folder
+            ) {
                 continue;
             }
-            $message = $folders__value->messages()->whereMessageId($id)->get()->first();
+            $message = $folders__value->query()->whereMessageId($id)->get()->first();
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
-            if ($move !== null) {
-                $message->move($move);
-            }
-            if ($delete === true) {
-                $message->delete();
-            }
-            if ($read === true) {
-                $message->setFlag('Seen');
-            }
-            if ($unread === true) {
-                $message->unsetFlag('Seen');
-            }
+            $message->delete();
         }
+        $client->disconnect();
         return true;
     }
 
-    private static function parse_config()
+    public static function readMail($mailbox = null, $folder = null, $id = null)
     {
-        $configPath = self::get_base_path() . '/config.json';
+        self::parseConfig();
+        self::validateInput('readMail', get_defined_vars());
+        $settings = self::setupSettings($mailbox);
+
+        $cm = new ClientManager();
+        $client = $cm->make($settings);
+        $client->connect();
+        $folders = $client->getFolders(false);
+        foreach ($folders as $folders__value) {
+            if (
+                $folder !== null &&
+                $folders__value->full_name !== $folder &&
+                self::decodeImapUtf7($folders__value->full_name) !== $folder
+            ) {
+                continue;
+            }
+            $message = $folders__value->query()->whereMessageId($id)->get()->first();
+            if (!$message) {
+                throw new \Exception('Message id not found: ' . $id);
+            }
+            $message->setFlag('Seen');
+        }
+        $client->disconnect();
+        return true;
+    }
+
+    public static function unreadMail($mailbox = null, $folder = null, $id = null)
+    {
+        self::parseConfig();
+        self::validateInput('unreadMail', get_defined_vars());
+        $settings = self::setupSettings($mailbox);
+
+        $cm = new ClientManager();
+        $client = $cm->make($settings);
+        $client->connect();
+        $folders = $client->getFolders(false);
+        foreach ($folders as $folders__value) {
+            if (
+                $folder !== null &&
+                $folders__value->full_name !== $folder &&
+                self::decodeImapUtf7($folders__value->full_name) !== $folder
+            ) {
+                continue;
+            }
+            $message = $folders__value->query()->whereMessageId($id)->get()->first();
+            if (!$message) {
+                throw new \Exception('Message id not found: ' . $id);
+            }
+            $message->unsetFlag('Seen');
+        }
+        $client->disconnect();
+        return true;
+    }
+
+    /**
+     * Get all folders from a mailbox.
+     *
+     * @param string $mailbox The email address of the mailbox (must be configured in config.json)
+     * @return array Array of folder names (e.g. ['INBOX', 'INBOX/subfolder', 'Sent', 'Trash'])
+     */
+    #[McpTool(name: 'get_folders', description: 'List all available folders in a mailbox')]
+    public static function getFolders($mailbox = null)
+    {
+        self::parseConfig();
+        self::validateInput('getFolders', get_defined_vars());
+        $settings = self::setupSettings($mailbox);
+
+        $cm = new ClientManager();
+        $client = $cm->make($settings);
+        $client->connect();
+        $folders_raw = $client->getFolders(false);
+        $folders = [];
+        foreach ($folders_raw as $folders_raw__value) {
+            $folders[] = $folders_raw__value->full_name;
+        }
+
+        // sort folders alphabetically, but sort "INBOX" first
+        usort($folders, function ($a, $b) {
+            if (mb_strpos($a, 'INBOX') === 0 && mb_strpos($b, 'INBOX') !== 0) {
+                return -1;
+            }
+            if (mb_strpos($a, 'INBOX') !== 0 && mb_strpos($b, 'INBOX') === 0) {
+                return 1;
+            }
+            return strnatcasecmp($a, $b);
+        });
+
+        $client->disconnect();
+        return $folders;
+    }
+
+    public static function createFolder($mailbox = null, $name = null)
+    {
+        self::parseConfig();
+        self::validateInput('createFolder', get_defined_vars());
+        $settings = self::setupSettings($mailbox);
+
+        $cm = new ClientManager();
+        $client = $cm->make($settings);
+        $client->connect();
+
+        $success = true;
+        $client->createFolder($name, false);
+
+        $client->disconnect();
+        return $success;
+    }
+
+    public static function renameFolder($mailbox = null, $name_old = null, $name_new = null)
+    {
+        self::parseConfig();
+        self::validateInput('renameFolder', get_defined_vars());
+        $settings = self::setupSettings($mailbox);
+
+        $cm = new ClientManager();
+        $client = $cm->make($settings);
+        $client->connect();
+
+        $success = false;
+        $folders = $client->getFolders(false);
+        foreach ($folders as $folders__value) {
+            if (
+                $folders__value->full_name !== $name_old &&
+                self::decodeImapUtf7($folders__value->full_name) !== $name_old
+            ) {
+                continue;
+            }
+            //$folders__value->move( self::encodeImapUtf7($name_new), false);
+            $client
+                ->getConnection()
+                ->renameFolder(self::encodeImapUtf7($folders__value->full_name), self::encodeImapUtf7($name_new))
+                ->validatedData();
+            $success = true;
+            break;
+        }
+
+        $client->disconnect();
+        return $success;
+    }
+
+    public static function deleteFolder($mailbox = null, $name = null)
+    {
+        self::parseConfig();
+        self::validateInput('deleteFolder', get_defined_vars());
+        $settings = self::setupSettings($mailbox);
+
+        $cm = new ClientManager();
+        $client = $cm->make($settings);
+        $client->connect();
+
+        $success = false;
+        $folders = $client->getFolders(false);
+        foreach ($folders as $folders__value) {
+            if ($folders__value->full_name !== $name && self::decodeImapUtf7($folders__value->full_name) !== $name) {
+                continue;
+            }
+            $folders__value->delete(false);
+            $success = true;
+            break;
+        }
+
+        $client->disconnect();
+        return $success;
+    }
+
+    public static function getConfig()
+    {
+        self::parseConfig();
+        return self::$config;
+    }
+
+    private static function parseConfig()
+    {
+        $configPath = self::getBasePath() . '/config.json';
         if (!file_exists($configPath)) {
             throw new \Exception('Configuration file not found: ' . $configPath);
         }
@@ -431,29 +606,50 @@ class mailhelper
         }
     }
 
-    private static function get_base_path()
+    private static function getBasePath()
     {
         $path = __DIR__;
 
-        // go up one level (src)
-        $path = dirname($path);
-
-        // if we are inside vendor, go up multiple levels
-        if (strpos($path, '/vendor/') !== false) {
-            $path = dirname(dirname(dirname($path)));
+        // go up until we find config.json
+        while (!file_exists($path . '/config.json')) {
+            $parent = dirname($path);
+            if ($parent === $path) {
+                break;
+            }
+            $path = $parent;
         }
 
         return $path;
     }
 
-    public static function parse_cli()
+    public static function parseCli()
     {
         $args = $_SERVER['argv'];
 
         // parse action
         $action = $args[1] ?? null;
-        if (!in_array($action, ['fetch', 'folders', 'send', 'edit', 'view'])) {
-            echo "Usage: mailhelper [fetch|send|folders|view|edit] [options]\n";
+        $actions = [
+            'fetch-mail',
+            'send-mail',
+            'view-mail',
+            'move-mail',
+            'delete-mail',
+            'read-mail',
+            'unread-mail',
+            'get-folders',
+            'create-folder',
+            'rename-folder',
+            'delete-folder',
+            'get-config'
+        ];
+        if (
+            !in_array(
+                $action,
+
+                $actions
+            )
+        ) {
+            echo 'Usage: mailhelper [' . implode('|', $actions) . "] [options]\n";
             die();
         }
 
@@ -486,8 +682,8 @@ class mailhelper
         if (isset($options['filter-subject'])) {
             $filter['subject'] = $options['filter-subject'];
         }
-        if (isset($options['filter-message'])) {
-            $filter['message'] = $options['filter-message'];
+        if (isset($options['filter-content'])) {
+            $filter['content'] = $options['filter-content'];
         }
         if (isset($options['filter-to'])) {
             $filter['to'] = $options['filter-to'];
@@ -506,7 +702,7 @@ class mailhelper
 
         try {
             $response = null;
-            if ($action === 'fetch') {
+            if ($action === 'fetch-mail') {
                 $response = mailhelper::fetch(
                     mailbox: $options['mailbox'] ?? null,
                     folder: $options['folder'] ?? null,
@@ -516,11 +712,11 @@ class mailhelper
                 );
             }
 
-            if ($action === 'send') {
+            if ($action === 'send-mail') {
                 $response = mailhelper::send(
                     mailbox: $options['mailbox'] ?? null,
                     subject: $options['subject'] ?? null,
-                    message: $options['message'] ?? null,
+                    content: $options['content'] ?? null,
                     from_name: $options['from_name'] ?? null,
                     to: $to,
                     cc: $cc,
@@ -529,11 +725,7 @@ class mailhelper
                 );
             }
 
-            if ($action === 'folders') {
-                $response = mailhelper::folders(mailbox: $options['mailbox'] ?? null);
-            }
-
-            if ($action === 'view') {
+            if ($action === 'view-mail') {
                 $response = mailhelper::view(
                     mailbox: $options['mailbox'] ?? null,
                     folder: $options['folder'] ?? null,
@@ -541,7 +733,7 @@ class mailhelper
                 );
             }
 
-            if ($action === 'edit') {
+            if ($action === 'edit-mail') {
                 $response = mailhelper::edit(
                     mailbox: $options['mailbox'] ?? null,
                     folder: $options['folder'] ?? null,
@@ -553,8 +745,38 @@ class mailhelper
                 );
             }
 
+            if ($action === 'get-folders') {
+                $response = mailhelper::getFolders(mailbox: $options['mailbox'] ?? null);
+            }
+
+            if ($action === 'create-folder') {
+                $response = mailhelper::createFolder(
+                    mailbox: $options['mailbox'] ?? null,
+                    name: $options['name'] ?? null
+                );
+            }
+
+            if ($action === 'rename-folder') {
+                $response = mailhelper::renameFolders(
+                    mailbox: $options['mailbox'] ?? null,
+                    name_old: $options['name_old'] ?? null,
+                    name_new: $options['name_new'] ?? null
+                );
+            }
+
+            if ($action === 'delete-folders') {
+                $response = mailhelper::deleteFolder(
+                    mailbox: $options['mailbox'] ?? null,
+                    name: $options['name'] ?? null
+                );
+            }
+
+            if ($action === 'get-config') {
+                $response = mailhelper::config();
+            }
+
             if ($response !== null) {
-                $response = self::pretty_print($response);
+                $response = self::prettyPrint($response);
                 echo $response;
                 die();
             }
@@ -565,12 +787,12 @@ class mailhelper
         }
     }
 
-    public static function is_cli()
+    public static function isCli()
     {
         return php_sapi_name() === 'cli' && isset($_SERVER['argv']) && basename($_SERVER['argv'][0]) !== 'phpunit';
     }
 
-    private static function pretty_print($data, $indent = 0)
+    private static function prettyPrint($data, $indent = 0)
     {
         if ($data === true || $data === '1' || $data === 1) {
             return '✅' . "\n";
@@ -593,25 +815,25 @@ class mailhelper
                         } else {
                             $output .= $prefix . "\033[1;33m[" . $key . "]\033[0m\n";
                         }
-                        $output .= self::pretty_print($value, $indent + 1);
+                        $output .= self::prettyPrint($value, $indent + 1);
                     } else {
                         if ($is_assoc) {
                             $output .=
-                                $prefix . "\033[1;36m" . $key . ":\033[0m " . self::pretty_print_value($value) . "\n";
+                                $prefix . "\033[1;36m" . $key . ":\033[0m " . self::prettyPrintValue($value) . "\n";
                         } else {
-                            $output .= $prefix . '- ' . self::pretty_print_value($value) . "\n";
+                            $output .= $prefix . '- ' . self::prettyPrintValue($value) . "\n";
                         }
                     }
                 }
             }
         } else {
-            $output .= $prefix . self::pretty_print_value($data) . "\n";
+            $output .= $prefix . self::prettyPrintValue($data) . "\n";
         }
 
         return $output;
     }
 
-    private static function pretty_print_value($value)
+    private static function prettyPrintValue($value)
     {
         if (is_array($value) && empty($value)) {
             return '[]';
@@ -640,7 +862,7 @@ class mailhelper
         return $value;
     }
 
-    private static function check_filter($filter, $message)
+    private static function checkFilter($filter, $message)
     {
         if ($filter !== null && !empty($filter)) {
             if ($filter['date_from'] ?? null) {
@@ -699,6 +921,12 @@ class mailhelper
     private static function progress($done, $total, $info = '', $width = 75, $char = '=')
     {
         $perc = round(($done * 100) / $total);
+        if ($perc < 0) {
+            $perc = 0;
+        }
+        if ($perc > 100) {
+            $perc = 100;
+        }
         $bar = round(($width * $perc) / 100);
         echo sprintf(
             "%s[%s%s] %s\r",
@@ -709,7 +937,7 @@ class mailhelper
         );
     }
 
-    private static function validate_input($action, $args)
+    private static function validateInput($action, $args)
     {
         if (!($args['mailbox'] ?? null)) {
             throw new \Exception('Missing mailbox.');
@@ -720,27 +948,64 @@ class mailhelper
         if (!isset(self::$config[$args['mailbox']]['imap'])) {
             throw new \Exception('IMAP configuration not found for mailbox: ' . $args['mailbox']);
         }
-        if ($action === 'fetch') {
+        if ($action === 'fetchMails') {
         }
-        if ($action === 'send') {
+        if ($action === 'sendMail') {
             if (!($args['subject'] ?? null)) {
                 throw new \Exception('Missing subject.');
             }
-            if (!($args['message'] ?? null)) {
-                throw new \Exception('Missing message.');
+            if (!($args['content'] ?? null)) {
+                throw new \Exception('Missing content.');
             }
             if (!($args['to'] ?? null)) {
                 throw new \Exception('Missing to.');
             }
         }
-        if ($action === 'edit') {
+        if ($action === 'viewMail') {
             if (!($args['id'] ?? null)) {
                 throw new \Exception('Missing id.');
             }
         }
+        if ($action === 'moveMail') {
+            if (!($args['id'] ?? null)) {
+                throw new \Exception('Missing id.');
+            }
+        }
+        if ($action === 'deleteMail') {
+            if (!($args['id'] ?? null)) {
+                throw new \Exception('Missing id.');
+            }
+        }
+        if ($action === 'readMail') {
+            if (!($args['id'] ?? null)) {
+                throw new \Exception('Missing id.');
+            }
+        }
+        if ($action === 'unreadMail') {
+            if (!($args['id'] ?? null)) {
+                throw new \Exception('Missing id.');
+            }
+        }
+        if ($action === 'getFolders') {
+        }
+        if ($action === 'createFolder') {
+            if (!($args['name'] ?? null)) {
+                throw new \Exception('Missing name.');
+            }
+        }
+        if ($action === 'renameFolder') {
+            if (!($args['name_old'] ?? null) || !($args['name_new'] ?? null)) {
+                throw new \Exception('Missing name.');
+            }
+        }
+        if ($action === 'deleteFolder') {
+            if (!($args['name'] ?? null)) {
+                throw new \Exception('Missing name.');
+            }
+        }
     }
 
-    private static function setup_settings($mailbox)
+    private static function setupSettings($mailbox)
     {
         $settings = [];
         if (self::$config[$mailbox]['tenant_id'] ?? null) {
@@ -799,46 +1064,164 @@ class mailhelper
         return $settings;
     }
 
-    private static function get_mail_data_basic($message)
+    private static function getMailDataBasic($message)
     {
-        $mail = [];
-        $mail['id'] = $message->getMessageId()->toString();
+        $mail = (object) [];
+        $mail->id = $message->getMessageId()->toString();
 
         foreach (['from' => 'getFrom', 'to' => 'getTo', 'cc' => 'getCc'] as $fields__key => $fields__value) {
-            $mail[$fields__key] = [];
+            $mail->$fields__key = [];
             $addresses = $message->$fields__value()->toArray();
             foreach ($addresses as $addresses__value) {
-                $mail[$fields__key][] = [
+                $mail->$fields__key[] = (object) [
                     'name' => $addresses__value->personal ?? '',
                     'email' => $addresses__value->mail ?? ''
                 ];
             }
         }
 
-        $mail['date'] = $message->getDate()->toDate()->setTimezone(date_default_timezone_get())->format('Y-m-d H:i:s');
+        $mail->date = $message->getDate()->toDate()->setTimezone(date_default_timezone_get())->format('Y-m-d H:i:s');
 
-        $subject = @$message->getSubject()[0];
+        $subject = $message->getSubject()[0] ?? '';
         $subject = trim($subject);
         $subject = preg_replace("/\r\n|\r|\n/", '', trim(@$message->getSubject()[0]));
         if (mb_detect_encoding($subject, 'UTF-8, ISO-8859-1') !== 'UTF-8') {
-            $subject = utf8_encode($subject);
+            $subject = self::utf8EncodeLegacy($subject);
         }
-        $mail['subject'] = $subject;
+        $mail->subject = $subject;
+
+        $flags = $message->getFlags()->toArray();
+        $mail->seen = !empty($flags) && in_array('Seen', $flags);
+
         return $mail;
     }
 
-    private static function check_and_format_attachment($attachment)
+    private static function checkAndFormatAttachment($attachment)
     {
         if (!file_exists($attachment)) {
-            $attachment = self::get_base_path() . '/' . ltrim($attachment, '/');
+            $attachment = self::getBasePath() . '/' . ltrim($attachment, '/');
         }
         if (!file_exists($attachment)) {
             throw new \Exception('Attachment file not found: ' . $attachment);
         }
         return $attachment;
     }
+
+    private static function utf8EncodeLegacy($str)
+    {
+        return \UConverter::transcode($str, 'UTF8', 'ISO-8859-1');
+    }
+
+    public static function encodeImapUtf7($string)
+    {
+        // Wenn nur ASCII, keine Kodierung nötig
+        if (!preg_match('/[^\x20-\x7E]/', $string)) {
+            return $string;
+        }
+
+        // Manuelles mUTF-7 Encoding (RFC 3501)
+        // NICHT mb_convert_encoding verwenden - es funktioniert nicht korrekt!
+        $result = '';
+        $length = mb_strlen($string, 'UTF-8');
+        $base64Buffer = '';
+
+        for ($i = 0; $i < $length; $i++) {
+            $char = mb_substr($string, $i, 1, 'UTF-8');
+            $ord = mb_ord($char, 'UTF-8');
+
+            if ($ord >= 0x20 && $ord <= 0x7e) {
+                // ASCII printable - flush buffer first
+                if ($base64Buffer !== '') {
+                    $utf16 = mb_convert_encoding($base64Buffer, 'UTF-16BE', 'UTF-8');
+                    $encoded = base64_encode($utf16);
+                    $encoded = rtrim($encoded, '=');
+                    $encoded = str_replace('/', ',', $encoded);
+                    $result .= '&' . $encoded . '-';
+                    $base64Buffer = '';
+                }
+                if ($char === '&') {
+                    $result .= '&-';
+                } else {
+                    $result .= $char;
+                }
+            } else {
+                // Non-ASCII - sammeln
+                $base64Buffer .= $char;
+            }
+        }
+
+        // Restlichen Buffer
+        if ($base64Buffer !== '') {
+            $utf16 = mb_convert_encoding($base64Buffer, 'UTF-16BE', 'UTF-8');
+            $encoded = base64_encode($utf16);
+            $encoded = rtrim($encoded, '=');
+            $encoded = str_replace('/', ',', $encoded);
+            $result .= '&' . $encoded . '-';
+        }
+
+        return $result;
+    }
+
+    public static function decodeImapUtf7($string)
+    {
+        // Schneller Check: Wenn kein & vorhanden, ist es kein mUTF-7
+        if (strpos($string, '&') === false) {
+            return $string;
+        }
+
+        // Versuche mb_convert_encoding mit UTF7-IMAP
+        if (function_exists('mb_convert_encoding')) {
+            $encodings = mb_list_encodings();
+            if (in_array('UTF7-IMAP', $encodings)) {
+                $decoded = @mb_convert_encoding($string, 'UTF-8', 'UTF7-IMAP');
+                if ($decoded !== false && $decoded !== '') {
+                    return $decoded;
+                }
+            }
+        }
+
+        // Fallback: Manuelles Decoding
+        $result = '';
+        $length = strlen($string);
+        $i = 0;
+
+        while ($i < $length) {
+            if ($string[$i] === '&') {
+                if ($i + 1 < $length && $string[$i + 1] === '-') {
+                    // &- ist escaped &
+                    $result .= '&';
+                    $i += 2;
+                } else {
+                    // Base64 encoded section finden
+                    $end = strpos($string, '-', $i + 1);
+                    if ($end === false) {
+                        $end = $length;
+                    }
+                    $encoded = substr($string, $i + 1, $end - $i - 1);
+                    $encoded = str_replace(',', '/', $encoded); // mUTF-7 , zurück zu /
+
+                    // Padding hinzufügen
+                    $padding = strlen($encoded) % 4;
+                    if ($padding > 0) {
+                        $encoded .= str_repeat('=', 4 - $padding);
+                    }
+
+                    $decoded = base64_decode($encoded);
+                    if ($decoded !== false) {
+                        $result .= mb_convert_encoding($decoded, 'UTF-8', 'UTF-16BE');
+                    }
+                    $i = $end + 1;
+                }
+            } else {
+                $result .= $string[$i];
+                $i++;
+            }
+        }
+
+        return $result;
+    }
 }
 
-if (mailhelper::is_cli()) {
-    mailhelper::parse_cli();
+if (mailhelper::isCli()) {
+    mailhelper::parseCli();
 }
