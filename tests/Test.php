@@ -98,12 +98,18 @@ class Test extends \PHPUnit\Framework\TestCase
             $response = mailhelper::fetchMails(
                 mailbox: $mailboxes__value,
                 folder: $folder_inbox,
-                limit: 1,
+                limit: 10,
                 order: 'desc'
             );
             //$this->log($response);
             $this->assertTrue(count($response) > 0);
-            $mail_id = $response[0]->id;
+            $mail_id = null;
+            foreach ($response as $response__value) {
+                if ($response__value->subject === $test_subject) {
+                    $mail_id = $response__value->id;
+                    break;
+                }
+            }
 
             // viewMail
             $response = mailhelper::viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
