@@ -27,8 +27,8 @@ class Test extends \PHPUnit\Framework\TestCase
             // createFolder
             $prefix = $this->determinePrefix($mailboxes__value);
             //$this->log($prefix);
-            $folder_old = $prefix . 'Testüüü Folder #' . mt_rand(1000, 9999);
-            $folder_new = $prefix . 'Renamedääää Test Folder #' . mt_rand(1000, 9999);
+            $folder_old = $prefix . 'Testüüü Folder ' . mt_rand(1000, 9999);
+            $folder_new = $prefix . 'Renamedääää Test Folder ' . mt_rand(1000, 9999);
             try {
                 mailhelper::deleteFolder(mailbox: $mailboxes__value, name: $folder_old);
                 mailhelper::deleteFolder(mailbox: $mailboxes__value, name: $folder_new);
@@ -82,8 +82,8 @@ class Test extends \PHPUnit\Framework\TestCase
             }
             //$this->log(mailhelper::getFolders(mailbox: $mailboxes__value));
 
-            $test_subject = 'JOOOOOO This is a test! 🚀 #' . mt_rand(1000, 9999);
-            $test_content = '✅ Test <strong>successful</strong>! #' . mt_rand(1000, 9999);
+            $test_subject = 'JOOOOOO This is a test! 🚀 ' . mt_rand(1000, 9999);
+            $test_content = '✅ Test <strong>successful</strong>! ' . mt_rand(1000, 9999);
 
             // sendMail
             $response = mailhelper::sendMail(
