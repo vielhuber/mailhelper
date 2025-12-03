@@ -3,7 +3,7 @@ use vielhuber\mailhelper\mailhelper;
 
 class Test extends \PHPUnit\Framework\TestCase
 {
-    protected $sleep = 15;
+    protected $sleep = 20;
 
     protected $mailboxes = [];
 
