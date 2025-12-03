@@ -65,7 +65,7 @@ class Test extends \PHPUnit\Framework\TestCase
             $response = mailhelper::deleteFolder(mailbox: $mailboxes__value, name: $folder_new);
             //$this->log($response);
             $this->assertTrue($response);
-            sleep(3);
+            $this->sleep();
             $response = mailhelper::getFolders(mailbox: $mailboxes__value);
             //$this->log($response);
             $this->assertNotContains($folder_new, $response);
