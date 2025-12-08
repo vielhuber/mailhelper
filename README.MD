@@ -38,7 +38,8 @@ vi config.json
             "username": "info@example.com",
             "password": "***",
             "encryption": "ssl"
-        }
+        },
+        "test": true
     },
     "support@company.com": {
         "imap": {
@@ -55,7 +56,8 @@ vi config.json
             "username": "support@company.com",
             "password": "***",
             "encryption": "ssl"
-        }
+        },
+        "test": false
     }
 }
 ```
@@ -145,7 +147,9 @@ vi config.json
 require_once __DIR__ . '/vendor/autoload.php';
 use vielhuber\mailhelper\mailhelper;
 
-mailhelper::fetchMails(
+$mailhelper = new mailhelper();
+
+$mailhelper->fetchMails(
     mailbox: 'xxx@tld.com',
     folder: 'INBOX/foo/bar',
     filter: [
@@ -160,16 +164,16 @@ mailhelper::fetchMails(
     order: 'asc'
 );
 
-mailhelper::sendMail(
+$mailhelper->sendMail(
     mailbox: 'xxx@tld.com',
     subject: 'This is a test! 🚀',
     content: '✅ Test <strong>successful</strong>!',
-    from_name: 'John Doe',
     to: 'aaa@tld.com',
     to: ['aaa@tld.com', 'bbb@tld.com'],
     to: [['name' => 'John Doe', 'email' => 'aaa@tld.com'], ['name' => 'Jane Doe', 'email' => 'bbb@tld.com']],
     cc: 'aaa@tld.com',
     bcc: 'aaa@tld.com',
+    from_name: 'John Doe',
     attachments: __DIR__ . '/test1.jpg',
     attachments: [__DIR__ . '/test1.jpg', __DIR__ . '/test2.jpg'],
     attachments: [
@@ -178,58 +182,58 @@ mailhelper::sendMail(
     ]
 );
 
-mailhelper::viewMail(
+$mailhelper->viewMail(
     mailbox: 'xxx@tld.com',
     folder: 'INBOX/foo/bar',
     id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 );
 
-mailhelper::moveMail(
+$mailhelper->moveMail(
     mailbox: 'xxx@tld.com',
     folder: 'INBOX/foo/bar',
     id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
     name: 'INBOX/foo/bar'
 );
 
-mailhelper::deleteMail(
+$mailhelper->deleteMail(
     mailbox: 'xxx@tld.com',
     folder: 'INBOX/foo/bar',
     id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
 );
 
-mailhelper::readMail(
+$mailhelper->readMail(
     mailbox: 'xxx@tld.com',
     folder: 'INBOX/foo/bar',
     id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
 );
 
-mailhelper::unreadMail(
+$mailhelper->unreadMail(
     mailbox: 'xxx@tld.com',
     folder: 'INBOX/foo/bar',
     id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
 );
 
-mailhelper::getFolders(
+$mailhelper->getFolders(
     mailbox: 'xxx@tld.com'
 );
 
-mailhelper::createFolder(
+$mailhelper->createFolder(
     mailbox: 'xxx@tld.com'
     name: 'INBOX/foo'
 );
 
-mailhelper::renameFolder(
+$mailhelper->renameFolder(
     mailbox: 'xxx@tld.com'
     name_old: 'INBOX/foo',
     name_new: 'INBOX/foo'
 );
 
-mailhelper::deleteFolder(
+$mailhelper->deleteFolder(
     mailbox: 'xxx@tld.com'
     name: 'INBOX/foo'
 );
 
-mailhelper::getConfig();
+$mailhelper->getConfig();
 ```
 
 ### mcp
@@ -239,7 +243,7 @@ mailhelper::getConfig();
     "mcpServers": {
         "email": {
             "command": "/usr/bin/php8.1",
-            "args": ["/var/www/project/vendor/vielhuber/mailhelper/src/mcp.php"]
+            "args": ["/var/www/project/vendor/vielhuber/mailhelper/src/mcp-server.php"]
         }
     }
 }

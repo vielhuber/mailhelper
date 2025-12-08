@@ -5,7 +5,8 @@
         "php": ">=8.1",
         "php-mcp/server": "^3.3",
         "phpmailer/phpmailer": "^7.0",
-        "webklex/php-imap": "^6.2"
+        "webklex/php-imap": "^6.2",
+        "monolog/monolog": "^3.9"
     },
     "license": "MIT",
     "autoload": {

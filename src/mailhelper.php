@@ -3,13 +3,15 @@ namespace vielhuber\mailhelper;
 
 error_reporting(E_ALL & ~E_DEPRECATED);
 
-// Autoloader: Try different paths depending on installation method
-$autoloadPaths = [
-    __DIR__ . '/../vendor/autoload.php', // Local development
-    __DIR__ . '/../../../autoload.php', // Installed via Composer (vendor/vielhuber/mailhelper/src)
-    __DIR__ . '/../../../../autoload.php' // Alternative Composer path
-];
-foreach ($autoloadPaths as $autoloadPath) {
+// autoloader: try different paths depending on installation method
+foreach (
+    [
+        __DIR__ . '/../vendor/autoload.php', // local development
+        __DIR__ . '/../../../autoload.php', // installed via composer
+        __DIR__ . '/../../../../autoload.php' // alternative composer path
+    ]
+    as $autoloadPath
+) {
     if (file_exists($autoloadPath)) {
         require_once $autoloadPath;
         break;
@@ -17,12 +19,18 @@ foreach ($autoloadPaths as $autoloadPath) {
 }
 
 use PhpMcp\Server\Attributes\McpTool;
+use PhpMcp\Server\Attributes\Schema;
 use Webklex\PHPIMAP\ClientManager;
 use PHPMailer\PHPMailer\PHPMailer;
 
 class mailhelper
 {
-    public static array $config = [];
+    public array $config = [];
+
+    public function __construct()
+    {
+        $this->config = $this->getConfig();
+    }
 
     /**
      * Fetch emails from a configured mailbox via IMAP.
@@ -31,25 +39,30 @@ class mailhelper
      * Supports date range filtering, subject/content search, and recipient filtering.
      * Results are sorted by date and limited to the specified count.
      *
-     * @param string|null $mailbox Email address of the mailbox (must exist in config.json)
-     * @param string|array|null $folder Folder name(s) to fetch from (e.g., 'INBOX', ['INBOX', 'Sent']). Null = all folders
-     * @param array|null $filter Filter criteria with keys: date_from, date_until, subject, message, to, cc
-     * @param int|null $limit Maximum number of emails to return (default: 100)
-     * @param string|null $order Sort order: 'asc' (oldest first) or 'desc' (newest first, default)
+     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
+     * @param string $folder Folder name to fetch from (required, e.g., 'INBOX')
+     * @param string|null $filter Filter as JSON string, object, or array: {"date_from": "2024-01-01", "date_until": "2024-12-31", "subject": "test", "to": "email@example.com"} (optional)
+     * @param int|null $limit Maximum number of emails to return (optional, default: 100)
+     * @param string|null $order Sort order: 'asc' (oldest first) or 'desc' (newest first, default) (optional)
      * @return array List of email objects containing: id, from, to, cc, date, subject, seen
      * @throws \Exception If mailbox not configured or IMAP connection fails
      */
-    #[McpTool(name: 'fetch_mails', description: 'Fetch emails from a mailbox with optional filtering by date, subject, content, and recipients. Returns email headers sorted by date.')]
-    public static function fetchMails(
-        ?string $mailbox = null,
-        string|array|null $folder = null,
-        ?array $filter = null,
+    #[
+        McpTool(
+            name: 'fetch_mails',
+            description: 'Fetch emails from a mailbox. Optional filter as JSON: {"date_from": "YYYY-MM-DD", "date_until": "YYYY-MM-DD", "subject": "text", "to": "email"}'
+        )
+    ]
+    public function fetchMails(
+        string $mailbox,
+        string $folder,
+        #[Schema(definition: ['type' => ['string', 'null']])] string|array|null $filter = null,
         ?int $limit = 100,
         ?string $order = null
     ): array {
-        self::parseConfig();
-        self::validateInput('fetchMails', get_defined_vars());
-        $settings = self::setupSettings($mailbox);
+        $filter = self::parseJsonParam($filter);
+        $this->validateInput('fetchMails', get_defined_vars());
+        $settings = $this->setupSettings($mailbox);
 
         $mails = [];
 
@@ -146,39 +159,47 @@ class mailhelper
      * Supports multiple recipients (To, CC, BCC), embedded images (base64 or relative paths),
      * and file attachments. Automatically generates a plain-text alternative body.
      *
-     * @param string|null $mailbox Sender email address (must exist in config.json with SMTP settings)
-     * @param string|null $subject Email subject line
-     * @param string|null $content Email body (HTML supported, images auto-embedded)
-     * @param string|null $from_name Sender display name (overrides config if set)
-     * @param string|array|null $to Recipient(s): 'email@example.com' or [{"name": "John", "email": "john@example.com"}]
-     * @param string|array|null $cc CC recipient(s): same format as $to
-     * @param string|array|null $bcc BCC recipient(s): same format as $to
-     * @param string|array|null $attachments File path(s) or [{"name": "doc.pdf", "file": "/path/to/file.pdf"}]
+     * @param string $mailbox Sender email address (required, must exist in config.json with SMTP settings)
+     * @param string $subject Email subject line (required)
+     * @param string $content Email body (required, HTML supported, images auto-embedded)
+     * @param string $to Recipient(s): 'email@example.com' or array [{"name": "John", "email": "john@example.com"}] (required)
+     * @param string|null $cc CC recipient(s): same format as $to (optional)
+     * @param string|null $bcc BCC recipient(s): same format as $to (optional)
+     * @param string|null $from_name Sender display name (optional, overrides config if set)
+     * @param string|null $attachments File path or array [{"name": "doc.pdf", "file": "/path/to/file.pdf"}] (optional)
      * @return bool True if email was sent successfully
      * @throws \Exception If SMTP connection fails or sending fails
      */
-    #[McpTool(name: 'send_mail', description: 'Send an HTML email with optional attachments via SMTP. Supports multiple recipients (To/CC/BCC) and auto-embeds images.')]
-    public static function sendMail(
-        ?string $mailbox = null,
-        ?string $subject = null,
-        ?string $content = null,
+    #[
+        McpTool(
+            name: 'send_mail',
+            description: 'Send an HTML email via SMTP. Recipients as email string or JSON array: [{"name": "John", "email": "john@example.com"}]. Attachments as path or JSON: [{"name": "doc.pdf", "file": "/path/to/file.pdf"}]'
+        )
+    ]
+    public function sendMail(
+        string $mailbox,
+        string $subject,
+        string $content,
+        #[Schema(definition: ['type' => ['string']])] string|array $to,
+        #[Schema(definition: ['type' => ['string', 'null']])] string|array|null $cc = null,
+        #[Schema(definition: ['type' => ['string', 'null']])] string|array|null $bcc = null,
         ?string $from_name = null,
-        string|array|null $to = null,
-        string|array|null $cc = null,
-        string|array|null $bcc = null,
-        string|array|null $attachments = null
+        #[Schema(definition: ['type' => ['string', 'null']])] string|array|null $attachments = null
     ): bool {
-        self::parseConfig();
-        self::validateInput('sendMail', get_defined_vars());
+        $to = self::parseJsonParam($to);
+        $cc = self::parseJsonParam($cc);
+        $bcc = self::parseJsonParam($bcc);
+        $attachments = self::parseJsonParam($attachments);
+        $this->validateInput('sendMail', get_defined_vars());
 
         $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
         try {
             $mail->isSMTP();
-            $mail->Host = self::$config[$mailbox]['smtp']['host'] ?? null;
-            $mail->Port = self::$config[$mailbox]['smtp']['port'] ?? null;
-            $mail->Username = self::$config[$mailbox]['smtp']['username'] ?? null;
-            $mail->Password = self::$config[$mailbox]['smtp']['password'] ?? null;
-            $mail->SMTPSecure = self::$config[$mailbox]['smtp']['encryption'] ?? null;
+            $mail->Host = $this->config[$mailbox]['smtp']['host'] ?? null;
+            $mail->Port = $this->config[$mailbox]['smtp']['port'] ?? null;
+            $mail->Username = $this->config[$mailbox]['smtp']['username'] ?? null;
+            $mail->Password = $this->config[$mailbox]['smtp']['password'] ?? null;
+            $mail->SMTPSecure = $this->config[$mailbox]['smtp']['encryption'] ?? null;
             $mail->setFrom($mailbox, $from_name ?? '');
             $mail->SMTPAuth = true;
             $mail->SMTPOptions = [
@@ -307,18 +328,22 @@ class mailhelper
      * Retrieves the complete email including HTML/plain-text body, attachments (as base64),
      * and the original EML file. Images embedded via CID are automatically converted to base64.
      *
-     * @param string|null $mailbox Email address of the mailbox (must exist in config.json)
-     * @param string|null $folder Folder containing the email (e.g., 'INBOX')
-     * @param string|null $id Message-ID of the email to retrieve
+     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
+     * @param string $folder Folder containing the email (required, e.g., 'INBOX')
+     * @param string $id Message-ID of the email to retrieve (required)
      * @return object|null Email object with: id, from, to, cc, date, subject, content_html, content_plain, attachments, eml
      * @throws \Exception If message ID not found or connection fails
      */
-    #[McpTool(name: 'view_mail', description: 'Retrieve full email content including HTML body, plain text, attachments (base64), and original EML file.')]
-    public static function viewMail(?string $mailbox = null, ?string $folder = null, ?string $id = null): ?object
+    #[
+        McpTool(
+            name: 'view_mail',
+            description: 'Retrieve full email content including HTML body, plain text, attachments (base64), and original EML file.'
+        )
+    ]
+    public function viewMail(string $mailbox, string $folder, string $id): ?object
     {
-        self::parseConfig();
-        self::validateInput('viewMail', get_defined_vars());
-        $settings = self::setupSettings($mailbox);
+        $this->validateInput('viewMail', get_defined_vars());
+        $settings = $this->setupSettings($mailbox);
 
         $cm = new ClientManager();
         $client = $cm->make($settings);
@@ -389,23 +414,23 @@ class mailhelper
      * Moves a single email identified by its Message-ID to a target folder.
      * Folder names with special characters (umlauts) are automatically encoded to mUTF-7.
      *
-     * @param string|null $mailbox Email address of the mailbox (must exist in config.json)
-     * @param string|null $folder Source folder containing the email (e.g., 'INBOX')
-     * @param string|null $id Message-ID of the email to move
-     * @param string|null $name Target folder name (e.g., 'Archive', 'INBOX/Subfolder')
+     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
+     * @param string $folder Source folder containing the email (required, e.g., 'INBOX')
+     * @param string $id Message-ID of the email to move (required)
+     * @param string $name Target folder name (required, e.g., 'Archive', 'INBOX/Subfolder')
      * @return bool True if move was successful
      * @throws \Exception If message ID not found or folder doesn't exist
      */
-    #[McpTool(name: 'move_mail', description: 'Move an email to a different folder within the mailbox. Supports folders with special characters.')]
-    public static function moveMail(
-        ?string $mailbox = null,
-        ?string $folder = null,
-        ?string $id = null,
-        ?string $name = null
-    ): bool {
-        self::parseConfig();
-        self::validateInput('moveMail', get_defined_vars());
-        $settings = self::setupSettings($mailbox);
+    #[
+        McpTool(
+            name: 'move_mail',
+            description: 'Move an email to a different folder within the mailbox. Supports folders with special characters.'
+        )
+    ]
+    public function moveMail(string $mailbox, string $folder, string $id, string $name): bool
+    {
+        $this->validateInput('moveMail', get_defined_vars());
+        $settings = $this->setupSettings($mailbox);
 
         $cm = new ClientManager();
         $client = $cm->make($settings);
@@ -436,29 +461,22 @@ class mailhelper
      * Permanently removes an email from the mailbox. This action cannot be undone.
      * To move to trash instead, use moveMail() with the trash folder name.
      *
-     * @param string|null $mailbox Email address of the mailbox (must exist in config.json)
-     * @param string|null $folder Folder containing the email (e.g., 'INBOX')
-     * @param string|null $id Message-ID of the email to delete
-     * @param string|null $move Unused parameter (deprecated)
-     * @param bool|null $delete Unused parameter (deprecated)
-     * @param bool|null $read Unused parameter (deprecated)
-     * @param bool|null $unread Unused parameter (deprecated)
+     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
+     * @param string $folder Folder containing the email (required, e.g., 'INBOX')
+     * @param string $id Message-ID of the email to delete (required)
      * @return bool True if deletion was successful
      * @throws \Exception If message ID not found
      */
-    #[McpTool(name: 'delete_mail', description: 'Permanently delete an email from the mailbox. Use move_mail to trash folder for soft delete.')]
-    public static function deleteMail(
-        ?string $mailbox = null,
-        ?string $folder = null,
-        ?string $id = null,
-        ?string $move = null,
-        ?bool $delete = null,
-        ?bool $read = null,
-        ?bool $unread = null
-    ): bool {
-        self::parseConfig();
-        self::validateInput('deleteMail', get_defined_vars());
-        $settings = self::setupSettings($mailbox);
+    #[
+        McpTool(
+            name: 'delete_mail',
+            description: 'Permanently delete an email from the mailbox. Use move_mail to trash folder for soft delete.'
+        )
+    ]
+    public function deleteMail(string $mailbox, string $folder, string $id): bool
+    {
+        $this->validateInput('deleteMail', get_defined_vars());
+        $settings = $this->setupSettings($mailbox);
 
         $cm = new ClientManager();
         $client = $cm->make($settings);
@@ -487,18 +505,17 @@ class mailhelper
      *
      * Sets the 'Seen' IMAP flag on the specified email, marking it as read in the mailbox.
      *
-     * @param string|null $mailbox Email address of the mailbox (must exist in config.json)
-     * @param string|null $folder Folder containing the email (e.g., 'INBOX')
-     * @param string|null $id Message-ID of the email to mark as read
+     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
+     * @param string $folder Folder containing the email (required, e.g., 'INBOX')
+     * @param string $id Message-ID of the email to mark as read (required)
      * @return bool True if flag was set successfully
      * @throws \Exception If message ID not found
      */
     #[McpTool(name: 'read_mail', description: 'Mark an email as read by setting the Seen flag.')]
-    public static function readMail(?string $mailbox = null, ?string $folder = null, ?string $id = null): bool
+    public function readMail(string $mailbox, string $folder, string $id): bool
     {
-        self::parseConfig();
-        self::validateInput('readMail', get_defined_vars());
-        $settings = self::setupSettings($mailbox);
+        $this->validateInput('readMail', get_defined_vars());
+        $settings = $this->setupSettings($mailbox);
 
         $cm = new ClientManager();
         $client = $cm->make($settings);
@@ -527,18 +544,17 @@ class mailhelper
      *
      * Removes the 'Seen' IMAP flag from the specified email, marking it as unread in the mailbox.
      *
-     * @param string|null $mailbox Email address of the mailbox (must exist in config.json)
-     * @param string|null $folder Folder containing the email (e.g., 'INBOX')
-     * @param string|null $id Message-ID of the email to mark as unread
+     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
+     * @param string $folder Folder containing the email (required, e.g., 'INBOX')
+     * @param string $id Message-ID of the email to mark as unread (required)
      * @return bool True if flag was removed successfully
      * @throws \Exception If message ID not found
      */
     #[McpTool(name: 'unread_mail', description: 'Mark an email as unread by removing the Seen flag.')]
-    public static function unreadMail(?string $mailbox = null, ?string $folder = null, ?string $id = null): bool
+    public function unreadMail(string $mailbox, string $folder, string $id): bool
     {
-        self::parseConfig();
-        self::validateInput('unreadMail', get_defined_vars());
-        $settings = self::setupSettings($mailbox);
+        $this->validateInput('unreadMail', get_defined_vars());
+        $settings = $this->setupSettings($mailbox);
 
         $cm = new ClientManager();
         $client = $cm->make($settings);
@@ -568,16 +584,20 @@ class mailhelper
      * Retrieves all available IMAP folders from the mailbox. Folders are sorted alphabetically
      * with INBOX and its subfolders appearing first. Folder names are returned as-is (may be mUTF-7 encoded).
      *
-     * @param string|null $mailbox Email address of the mailbox (must exist in config.json)
+     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
      * @return array List of folder names (e.g., ['INBOX', 'INBOX/Work', 'Archive', 'Sent', 'Trash'])
      * @throws \Exception If mailbox not configured or connection fails
      */
-    #[McpTool(name: 'get_folders', description: 'List all IMAP folders in a mailbox. Returns folder names sorted with INBOX first.')]
-    public static function getFolders(?string $mailbox = null): array
+    #[
+        McpTool(
+            name: 'get_folders',
+            description: 'List all IMAP folders in a mailbox. Returns folder names sorted with INBOX first.'
+        )
+    ]
+    public function getFolders(string $mailbox): array
     {
-        self::parseConfig();
-        self::validateInput('getFolders', get_defined_vars());
-        $settings = self::setupSettings($mailbox);
+        $this->validateInput('getFolders', get_defined_vars());
+        $settings = $this->setupSettings($mailbox);
 
         $cm = new ClientManager();
         $client = $cm->make($settings);
@@ -609,17 +629,16 @@ class mailhelper
      * Creates a new IMAP folder. Use '/' as delimiter for nested folders (e.g., 'INBOX/Projects').
      * Folder names with special characters are supported.
      *
-     * @param string|null $mailbox Email address of the mailbox (must exist in config.json)
-     * @param string|null $name Name of the folder to create (e.g., 'Archive', 'INBOX/Work')
+     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
+     * @param string $name Name of the folder to create (required, e.g., 'Archive', 'INBOX/Work')
      * @return bool True if folder was created successfully
      * @throws \Exception If folder already exists or creation fails
      */
     #[McpTool(name: 'create_folder', description: 'Create a new IMAP folder. Use / as delimiter for nested folders.')]
-    public static function createFolder(?string $mailbox = null, ?string $name = null): bool
+    public function createFolder(string $mailbox, string $name): bool
     {
-        self::parseConfig();
-        self::validateInput('createFolder', get_defined_vars());
-        $settings = self::setupSettings($mailbox);
+        $this->validateInput('createFolder', get_defined_vars());
+        $settings = $this->setupSettings($mailbox);
 
         $cm = new ClientManager();
         $client = $cm->make($settings);
@@ -638,21 +657,22 @@ class mailhelper
      * Renames an IMAP folder. Child folders are automatically moved with the parent.
      * Folder names with special characters (umlauts) are automatically encoded to mUTF-7.
      *
-     * @param string|null $mailbox Email address of the mailbox (must exist in config.json)
-     * @param string|null $name_old Current folder name (e.g., 'OldName')
-     * @param string|null $name_new New folder name (e.g., 'NewName')
+     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
+     * @param string $name_old Current folder name (required, e.g., 'OldName')
+     * @param string $name_new New folder name (required, e.g., 'NewName')
      * @return bool True if folder was renamed successfully
      * @throws \Exception If folder not found or rename fails
      */
-    #[McpTool(name: 'rename_folder', description: 'Rename an existing IMAP folder. Supports special characters in folder names.')]
-    public static function renameFolder(
-        ?string $mailbox = null,
-        ?string $name_old = null,
-        ?string $name_new = null
-    ): bool {
-        self::parseConfig();
-        self::validateInput('renameFolder', get_defined_vars());
-        $settings = self::setupSettings($mailbox);
+    #[
+        McpTool(
+            name: 'rename_folder',
+            description: 'Rename an existing IMAP folder. Supports special characters in folder names.'
+        )
+    ]
+    public function renameFolder(string $mailbox, string $name_old, string $name_new): bool
+    {
+        $this->validateInput('renameFolder', get_defined_vars());
+        $settings = $this->setupSettings($mailbox);
 
         $cm = new ClientManager();
         $client = $cm->make($settings);
@@ -686,17 +706,16 @@ class mailhelper
      * Permanently deletes an IMAP folder and all its contents. This action cannot be undone.
      * Protected system folders (INBOX, Sent, Trash) may not be deletable depending on server configuration.
      *
-     * @param string|null $mailbox Email address of the mailbox (must exist in config.json)
-     * @param string|null $name Name of the folder to delete (e.g., 'OldArchive')
+     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
+     * @param string $name Name of the folder to delete (required, e.g., 'OldArchive')
      * @return bool True if folder was deleted successfully
      * @throws \Exception If folder not found or deletion fails
      */
     #[McpTool(name: 'delete_folder', description: 'Permanently delete an IMAP folder and all its contents.')]
-    public static function deleteFolder(?string $mailbox = null, ?string $name = null): bool
+    public function deleteFolder(string $mailbox, string $name): bool
     {
-        self::parseConfig();
-        self::validateInput('deleteFolder', get_defined_vars());
-        $settings = self::setupSettings($mailbox);
+        $this->validateInput('deleteFolder', get_defined_vars());
+        $settings = $this->setupSettings($mailbox);
 
         $cm = new ClientManager();
         $client = $cm->make($settings);
@@ -727,23 +746,18 @@ class mailhelper
      * @throws \Exception If config.json not found or contains invalid JSON
      */
     #[McpTool(name: 'get_config', description: 'Get the current mailhelper configuration with all mailbox settings.')]
-    public static function getConfig(): array
-    {
-        self::parseConfig();
-        return self::$config;
-    }
-
-    private static function parseConfig(): void
+    public function getConfig(): array
     {
         $configPath = self::getBasePath() . '/config.json';
         if (!file_exists($configPath)) {
             throw new \Exception('Configuration file not found: ' . $configPath);
         }
         $configContent = file_get_contents($configPath);
-        self::$config = json_decode($configContent, true);
+        $json = json_decode($configContent, true);
         if (json_last_error() !== JSON_ERROR_NONE) {
             throw new \Exception('Error decoding configuration file: ' . json_last_error_msg());
         }
+        return $json;
     }
 
     private static function getBasePath(): string
@@ -769,7 +783,7 @@ class mailhelper
         // parse action
         $action = $args[1] ?? null;
         $actions = [
-            'fetch-mail',
+            'fetch-mails',
             'send-mail',
             'view-mail',
             'move-mail',
@@ -840,10 +854,12 @@ class mailhelper
             ? json_decode($options['attachments'], true) ?? $options['attachments']
             : null;
 
+        $mailhelper = new mailhelper();
+
         try {
             $response = null;
-            if ($action === 'fetch-mail') {
-                $response = mailhelper::fetch(
+            if ($action === 'fetch-mails') {
+                $response = $mailhelper->fetchMails(
                     mailbox: $options['mailbox'] ?? null,
                     folder: $options['folder'] ?? null,
                     filter: !empty($filter) ? $filter : null,
@@ -853,51 +869,72 @@ class mailhelper
             }
 
             if ($action === 'send-mail') {
-                $response = mailhelper::send(
+                $response = $mailhelper->sendMail(
                     mailbox: $options['mailbox'] ?? null,
                     subject: $options['subject'] ?? null,
                     content: $options['content'] ?? null,
+                    to: $to ?? null,
+                    cc: $cc ?? null,
+                    bcc: $bcc ?? null,
                     from_name: $options['from_name'] ?? null,
-                    to: $to,
-                    cc: $cc,
-                    bcc: $bcc,
-                    attachments: $attachments
+                    attachments: $attachments ?? null
                 );
             }
 
             if ($action === 'view-mail') {
-                $response = mailhelper::view(
+                $response = $mailhelper->viewMail(
                     mailbox: $options['mailbox'] ?? null,
                     folder: $options['folder'] ?? null,
                     id: $options['id'] ?? null
                 );
             }
 
-            if ($action === 'edit-mail') {
-                $response = mailhelper::edit(
+            if ($action === 'move-mail') {
+                $response = $mailhelper->moveMail(
                     mailbox: $options['mailbox'] ?? null,
                     folder: $options['folder'] ?? null,
                     id: $options['id'] ?? null,
-                    move: $options['move'] ?? null,
-                    delete: isset($options['delete']) ? (bool) $options['delete'] : null,
-                    read: isset($options['read']) ? (bool) $options['read'] : null,
-                    unread: isset($options['unread']) ? (bool) $options['unread'] : null
+                    name: $options['name'] ?? null
+                );
+            }
+
+            if ($action === 'delete-mail') {
+                $response = $mailhelper->deleteMail(
+                    mailbox: $options['mailbox'] ?? null,
+                    folder: $options['folder'] ?? null,
+                    id: $options['id'] ?? null
+                );
+            }
+
+            if ($action === 'read-mail') {
+                $response = $mailhelper->readMail(
+                    mailbox: $options['mailbox'] ?? null,
+                    folder: $options['folder'] ?? null,
+                    id: $options['id'] ?? null
+                );
+            }
+
+            if ($action === 'unread-mail') {
+                $response = $mailhelper->unreadMail(
+                    mailbox: $options['mailbox'] ?? null,
+                    folder: $options['folder'] ?? null,
+                    id: $options['id'] ?? null
                 );
             }
 
             if ($action === 'get-folders') {
-                $response = mailhelper::getFolders(mailbox: $options['mailbox'] ?? null);
+                $response = $mailhelper->getFolders(mailbox: $options['mailbox'] ?? null);
             }
 
             if ($action === 'create-folder') {
-                $response = mailhelper::createFolder(
+                $response = $mailhelper->createFolder(
                     mailbox: $options['mailbox'] ?? null,
                     name: $options['name'] ?? null
                 );
             }
 
             if ($action === 'rename-folder') {
-                $response = mailhelper::renameFolders(
+                $response = $mailhelper->renameFolders(
                     mailbox: $options['mailbox'] ?? null,
                     name_old: $options['name_old'] ?? null,
                     name_new: $options['name_new'] ?? null
@@ -905,14 +942,14 @@ class mailhelper
             }
 
             if ($action === 'delete-folders') {
-                $response = mailhelper::deleteFolder(
+                $response = $mailhelper->deleteFolder(
                     mailbox: $options['mailbox'] ?? null,
                     name: $options['name'] ?? null
                 );
             }
 
             if ($action === 'get-config') {
-                $response = mailhelper::config();
+                $response = $mailhelper->getConfig();
             }
 
             if ($response !== null) {
@@ -920,7 +957,7 @@ class mailhelper
                 echo $response;
                 die();
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             echo '⛔ ';
             echo $e->getMessage() . "\n";
             die();
@@ -929,7 +966,9 @@ class mailhelper
 
     public static function isCli(): bool
     {
-        return php_sapi_name() === 'cli' && isset($_SERVER['argv']) && basename($_SERVER['argv'][0]) !== 'phpunit';
+        return php_sapi_name() === 'cli' &&
+            isset($_SERVER['argv']) &&
+            !in_array(basename($_SERVER['argv'][0]), ['phpunit', 'mcp-server.php']);
     }
 
     private static function prettyPrint(mixed $data, int $indent = 0): string
@@ -943,12 +982,18 @@ class mailhelper
         $output = '';
         $prefix = str_repeat('  ', $indent);
 
+        if (is_object($data)) {
+            $data = (array) $data;
+        }
         if (is_array($data)) {
             if (empty($data)) {
                 $output .= $prefix . '[]' . "\n";
             } else {
                 $is_assoc = array_keys($data) !== range(0, count($data) - 1);
                 foreach ($data as $key => $value) {
+                    if (is_object($value)) {
+                        $value = (array) $value;
+                    }
                     if (is_array($value)) {
                         if ($is_assoc) {
                             $output .= $prefix . "\033[1;36m" . $key . ":\033[0m\n";
@@ -978,6 +1023,9 @@ class mailhelper
         if (is_array($value) && empty($value)) {
             return '[]';
         }
+        if (is_object($value) && empty((array) $value)) {
+            return '{}';
+        }
         if ($value === null) {
             return '[NULL]';
         }
@@ -991,7 +1039,7 @@ class mailhelper
             return '""';
         }
         if (!is_string($value)) {
-            return $value;
+            return serialize($value);
         }
         // replace newlines
         $value = str_replace(["\r\n", "\r", "\n"], ' ', $value);
@@ -1000,6 +1048,21 @@ class mailhelper
             return mb_substr($value, 0, $maxLength) . '...';
         }
         return $value;
+    }
+
+    private static function parseJsonParam(string|array|null $value): string|array|null
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        if (is_array($value)) {
+            return $value;
+        }
+        $decoded = json_decode($value, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            return $value; // Return original string if not valid JSON
+        }
+        return $decoded;
     }
 
     private static function checkFilter(?array $filter, mixed $message): bool
@@ -1082,15 +1145,15 @@ class mailhelper
         );
     }
 
-    private static function validateInput(string $action, array $args): void
+    private function validateInput(string $action, array $args): void
     {
         if (!($args['mailbox'] ?? null)) {
             throw new \Exception('Missing mailbox.');
         }
-        if (!isset(self::$config[$args['mailbox']])) {
+        if (!isset($this->config[$args['mailbox']])) {
             throw new \Exception('Mailbox not found in configuration: ' . $args['mailbox']);
         }
-        if (!isset(self::$config[$args['mailbox']]['imap'])) {
+        if (!isset($this->config[$args['mailbox']]['imap'])) {
             throw new \Exception('IMAP configuration not found for mailbox: ' . $args['mailbox']);
         }
         if ($action === 'fetchMails') {
@@ -1114,6 +1177,9 @@ class mailhelper
         if ($action === 'moveMail') {
             if (!($args['id'] ?? null)) {
                 throw new \Exception('Missing id.');
+            }
+            if (!($args['name'] ?? null)) {
+                throw new \Exception('Missing target folder name.');
             }
         }
         if ($action === 'deleteMail') {
@@ -1150,22 +1216,22 @@ class mailhelper
         }
     }
 
-    private static function setupSettings(string $mailbox): array
+    private function setupSettings(string $mailbox): array
     {
         $settings = [];
-        if (self::$config[$mailbox]['tenant_id'] ?? null) {
+        if ($this->config[$mailbox]['tenant_id'] ?? null) {
             $ch = curl_init();
             curl_setopt(
                 $ch,
                 CURLOPT_URL,
-                'https://login.microsoftonline.com/' . self::$config[$mailbox]['tenant_id'] . '/oauth2/v2.0/token'
+                'https://login.microsoftonline.com/' . $this->config[$mailbox]['tenant_id'] . '/oauth2/v2.0/token'
             );
             curl_setopt(
                 $ch,
                 CURLOPT_POSTFIELDS,
                 http_build_query([
-                    'client_id' => self::$config[$mailbox]['client_id'],
-                    'client_secret' => self::$config[$mailbox]['client_secret'],
+                    'client_id' => $this->config[$mailbox]['client_id'],
+                    'client_secret' => $this->config[$mailbox]['client_secret'],
                     'scope' => 'https://outlook.office365.com/.default',
                     'grant_type' => 'client_credentials'
                 ])
@@ -1186,23 +1252,23 @@ class mailhelper
             $access_token = $curl_result->access_token;
             $settings = [
                 'protocol' => 'imap',
-                'host' => self::$config[$mailbox]['imap']['host'] ?? null,
-                'port' => self::$config[$mailbox]['imap']['port'] ?? null,
-                'username' => self::$config[$mailbox]['imap']['username'] ?? null,
+                'host' => $this->config[$mailbox]['imap']['host'] ?? null,
+                'port' => $this->config[$mailbox]['imap']['port'] ?? null,
+                'username' => $this->config[$mailbox]['imap']['username'] ?? null,
                 'password' => $access_token,
                 'authentication' => 'oauth',
-                'encryption' => self::$config[$mailbox]['imap']['encryption'] ?? null,
+                'encryption' => $this->config[$mailbox]['imap']['encryption'] ?? null,
                 'validate_cert' => false
             ];
         } else {
             $settings = [
                 'protocol' => 'imap',
-                'host' => self::$config[$mailbox]['imap']['host'] ?? null,
-                'port' => self::$config[$mailbox]['imap']['port'] ?? null,
-                'username' => self::$config[$mailbox]['imap']['username'] ?? null,
-                'password' => self::$config[$mailbox]['imap']['password'] ?? null,
+                'host' => $this->config[$mailbox]['imap']['host'] ?? null,
+                'port' => $this->config[$mailbox]['imap']['port'] ?? null,
+                'username' => $this->config[$mailbox]['imap']['username'] ?? null,
+                'password' => $this->config[$mailbox]['imap']['password'] ?? null,
                 'authentication' => null,
-                'encryption' => self::$config[$mailbox]['imap']['encryption'] ?? null,
+                'encryption' => $this->config[$mailbox]['imap']['encryption'] ?? null,
                 'validate_cert' => false
             ];
         }

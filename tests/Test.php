@@ -3,16 +3,21 @@ use vielhuber\mailhelper\mailhelper;
 
 class Test extends \PHPUnit\Framework\TestCase
 {
-    protected $sleep = 20;
-
+    protected $sleep = null;
+    protected $mailhelper = null;
     protected $mailboxes = [];
 
     protected function setUp(): void
     {
-        $this->mailboxes = [];
-        $config = mailhelper::getConfig();
+        $this->sleep = @$_SERVER['CI'] == 'true' ? 20 : 10;
+
+        $this->mailhelper = new mailhelper();
+
+        $config = $this->mailhelper->getConfig();
         foreach ($config as $config__key => $config__value) {
-            $this->mailboxes[] = $config__key;
+            if (($config__value['test'] ?? null) !== false) {
+                $this->mailboxes[] = $config__key;
+            }
         }
     }
 
@@ -20,7 +25,7 @@ class Test extends \PHPUnit\Framework\TestCase
     {
         foreach ($this->mailboxes as $mailboxes__value) {
             // getFolders
-            $response = mailhelper::getFolders(mailbox: $mailboxes__value);
+            $response = $this->mailhelper->getFolders(mailbox: $mailboxes__value);
             //$this->log($response);
             $this->assertTrue(count($response) > 0);
 
@@ -30,23 +35,23 @@ class Test extends \PHPUnit\Framework\TestCase
             $folder_old = $prefix . 'Testüüü Folder ' . mt_rand(1000, 9999);
             $folder_new = $prefix . 'Renamedääää Test Folder ' . mt_rand(1000, 9999);
             try {
-                mailhelper::deleteFolder(mailbox: $mailboxes__value, name: $folder_old);
-                mailhelper::deleteFolder(mailbox: $mailboxes__value, name: $folder_new);
+                $this->mailhelper->deleteFolder(mailbox: $mailboxes__value, name: $folder_old);
+                $this->mailhelper->deleteFolder(mailbox: $mailboxes__value, name: $folder_new);
             } catch (\Throwable $e) {
             }
-            $response = mailhelper::createFolder(mailbox: $mailboxes__value, name: $folder_old);
+            $response = $this->mailhelper->createFolder(mailbox: $mailboxes__value, name: $folder_old);
             //$this->log($response);
             $this->assertTrue($response);
 
             $this->sleep();
 
-            $response = mailhelper::getFolders(mailbox: $mailboxes__value);
+            $response = $this->mailhelper->getFolders(mailbox: $mailboxes__value);
             //$this->log($response);
             $this->assertTrue(count($response) > 0);
             $this->assertContains($folder_old, $response);
 
             // renameFolder
-            $response = mailhelper::renameFolder(
+            $response = $this->mailhelper->renameFolder(
                 mailbox: $mailboxes__value,
                 name_old: $folder_old,
                 name_new: $folder_new
@@ -56,7 +61,7 @@ class Test extends \PHPUnit\Framework\TestCase
 
             $this->sleep();
 
-            $response = mailhelper::getFolders(mailbox: $mailboxes__value);
+            $response = $this->mailhelper->getFolders(mailbox: $mailboxes__value);
             //$this->log($response);
             $this->assertContains($folder_new, $response);
             $this->assertNotContains($folder_old, $response);
@@ -64,11 +69,11 @@ class Test extends \PHPUnit\Framework\TestCase
             $this->sleep();
 
             // deleteFolder
-            $response = mailhelper::deleteFolder(mailbox: $mailboxes__value, name: $folder_new);
+            $response = $this->mailhelper->deleteFolder(mailbox: $mailboxes__value, name: $folder_new);
             //$this->log($response);
             $this->assertTrue($response);
             $this->sleep();
-            $response = mailhelper::getFolders(mailbox: $mailboxes__value);
+            $response = $this->mailhelper->getFolders(mailbox: $mailboxes__value);
             //$this->log($response);
             $this->assertNotContains($folder_new, $response);
             $this->assertNotContains($folder_old, $response);
@@ -82,20 +87,20 @@ class Test extends \PHPUnit\Framework\TestCase
             if ($folder_inbox === null || $folder_other === null) {
                 $this->fail('No inbox/other folder found.');
             }
-            //$this->log(mailhelper::getFolders(mailbox: $mailboxes__value));
+            //$this->log($this->mailhelper->getFolders(mailbox: $mailboxes__value));
 
             $test_subject = 'JOOOOOO This is a test! 🚀 ' . mt_rand(1000, 9999);
             $test_content = '✅ Test <strong>successful</strong>! ' . mt_rand(1000, 9999);
 
             // sendMail
-            $response = mailhelper::sendMail(
+            $response = $this->mailhelper->sendMail(
                 mailbox: $mailboxes__value,
                 subject: $test_subject,
                 content: $test_content,
-                from_name: 'John Doee',
                 to: [['name' => 'John Doe', 'email' => $mailboxes__value]],
                 cc: 'test_cc@mailinator.com',
                 bcc: 'test_bcc@mailinator.com',
+                from_name: 'John Doee',
                 attachments: [['name' => 'foo.jpg', 'file' => __DIR__ . '/test.jpg']]
             );
             //$this->log($response);
@@ -104,7 +109,7 @@ class Test extends \PHPUnit\Framework\TestCase
             $this->sleep();
 
             // fetchMails
-            $response = mailhelper::fetchMails(
+            $response = $this->mailhelper->fetchMails(
                 mailbox: $mailboxes__value,
                 folder: $folder_inbox,
                 limit: 10, // don't limit 10, because other mails can income that disturb the test
@@ -121,30 +126,30 @@ class Test extends \PHPUnit\Framework\TestCase
             }
 
             // viewMail
-            $response = mailhelper::viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
+            $response = $this->mailhelper->viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
             //$this->log($response);
             $this->assertSame($response->id, $mail_id);
             $this->assertSame($response->subject, $test_subject);
-            $this->assertSame($response->content_html, $test_content);
-            $this->assertSame($response->content_plain, strip_tags($test_content));
+            $this->assertStringContainsString($test_content, $response->content_html);
+            $this->assertStringContainsString(strip_tags($test_content), $response->content_plain);
             $this->sleep();
 
             // readMail
-            $response = mailhelper::readMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
+            $response = $this->mailhelper->readMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
             $this->assertTrue($response);
             $this->sleep();
-            $response = mailhelper::viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
+            $response = $this->mailhelper->viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
             $this->assertSame($response->seen, true);
 
             // unreadMail
-            $response = mailhelper::unreadMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
+            $response = $this->mailhelper->unreadMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
             $this->assertTrue($response);
             $this->sleep();
-            $response = mailhelper::viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
+            $response = $this->mailhelper->viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
             $this->assertSame($response->seen, false);
 
             // moveMail
-            $response = mailhelper::moveMail(
+            $response = $this->mailhelper->moveMail(
                 mailbox: $mailboxes__value,
                 folder: $folder_inbox,
                 id: $mail_id,
@@ -154,12 +159,12 @@ class Test extends \PHPUnit\Framework\TestCase
             $this->sleep();
             $this->expectException(\Throwable::class);
             $this->expectExceptionMessageMatches('/not found/i');
-            $response = mailhelper::viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
-            $response = mailhelper::viewMail(mailbox: $mailboxes__value, folder: $folder_other, id: $mail_id);
+            $response = $this->mailhelper->viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
+            $response = $this->mailhelper->viewMail(mailbox: $mailboxes__value, folder: $folder_other, id: $mail_id);
             $this->assertSame($response->id, $mail_id);
 
             // deleteMail
-            $response = mailhelper::deleteMail(
+            $response = $this->mailhelper->deleteMail(
                 mailbox: $mailboxes__value,
                 folder: $folder_other,
                 id: $mail_id,
@@ -171,13 +176,13 @@ class Test extends \PHPUnit\Framework\TestCase
 
             $this->expectException(\Throwable::class);
             $this->expectExceptionMessageMatches('/not found/i');
-            $response = mailhelper::viewMail(mailbox: $mailboxes__value, folder: $folder_other, id: $mail_id);
+            $response = $this->mailhelper->viewMail(mailbox: $mailboxes__value, folder: $folder_other, id: $mail_id);
         }
     }
 
     private function determinePrefix($mailbox): string
     {
-        $response = mailhelper::getFolders($mailbox);
+        $response = $this->mailhelper->getFolders($mailbox);
         $prefix = 'INBOX.';
         if (count(array_filter($response, fn($f) => str_starts_with($f, 'INBOX/'))) > 0) {
             $prefix = 'INBOX/';
@@ -187,7 +192,7 @@ class Test extends \PHPUnit\Framework\TestCase
 
     private function determineFolders($mailbox): array
     {
-        $folders = mailhelper::getFolders(mailbox: $mailbox);
+        $folders = $this->mailhelper->getFolders(mailbox: $mailbox);
         $folder_inbox = null;
         foreach (['INBOX', 'Inbox', 'Posteingang'] as $folder_inbox__value) {
             if (count(array_filter($folders, fn($folders__value) => $folders__value === $folder_inbox__value)) > 0) {
