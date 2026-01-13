@@ -7,7 +7,11 @@ use PhpMcp\Server\Server;
 use PhpMcp\Server\Transports\StdioServerTransport;
 try {
     $server = Server::make()
-        ->withServerInfo('MCP Server', '1.0.0')
+        ->withServerInfo('Mail Helper MCP Server', '1.0.0')
+        ->withInstructions(
+            'This server provides email handling capabilities using PHP-IMAP. ' .
+                'It can read, send, and manage emails through IMAP connections.'
+        )
         ->withLogger((new Logger('mcp'))->pushHandler(new StreamHandler(__DIR__ . '/mcp-server.log', Level::Debug)))
         ->build();
     $server->discover(basePath: __DIR__, scanDirs: ['.']);
