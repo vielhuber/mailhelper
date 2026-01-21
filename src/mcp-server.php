@@ -13,6 +13,7 @@ try {
                 'It can read, send, and manage emails through IMAP connections.'
         )
         ->withLogger((new Logger('mcp'))->pushHandler(new StreamHandler(__DIR__ . '/mcp-server.log', Level::Debug)))
+        ->withSession('array', 60 * 60 * 8)
         ->build();
     $server->discover(basePath: __DIR__, scanDirs: ['.']);
     $server->listen(new StdioServerTransport());
