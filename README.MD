@@ -243,7 +243,7 @@ $mailhelper->getConfig();
     "mcpServers": {
         "email": {
             "command": "/usr/bin/php8.1",
-            "args": ["/var/www/project/vendor/vielhuber/mailhelper/src/mcp-server.php"]
+            "args": ["/var/www/project/vendor/bin/mcp-server.php"]
         }
     }
 }
