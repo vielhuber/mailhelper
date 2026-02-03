@@ -366,11 +366,32 @@ class mailhelper
 
             $mail = self::getMailDataBasic($message);
 
+            $body = $message->getHTMLBody();
+            $body = trim($body);
+            $body = preg_replace('/\r\n|\r|\n/', "\n", $body);
+            $body = preg_replace('/\n\s+/', "\n", $body);
+            $body = preg_replace('/\s+/', ' ', $body);
+            $body = preg_replace('/\n\n+/', "\n", $body);
+            $mail->content_html = $body;
+
+            $body = $message->getTextBody();
+            if (empty($body)) {
+                $body = $message->getHTMLBody()
+                    ? strip_tags(
+                        str_replace(['<br>', '<br/>', '<br />', '</p>', '</div>'], "\n", $message->getHTMLBody())
+                    )
+                    : '';
+            }
+            $body = trim($body);
+            $body = preg_replace('/\r\n|\r|\n/', "\n", $body);
+            $body = preg_replace('/\n\s+/', "\n", $body);
+            $body = preg_replace('/\s+/', ' ', $body);
+            $body = preg_replace('/\n\n+/', "\n", $body);
+            $mail->content_plain = $body;
+
             $mail->eml =
                 'data:message/rfc822;base64,' .
                 base64_encode(json_decode(json_encode($message->getHeader()), true)['raw'] . $message->getRawBody());
-            $mail->content_html = $message->getHTMLBody();
-            $mail->content_plain = $message->getTextBody();
 
             $mail->attachments = [];
             $attachments = $message->getAttachments();
