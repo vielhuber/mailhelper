@@ -367,6 +367,7 @@ class mailhelper
             $mail = self::getMailDataBasic($message);
 
             $body = $message->getHTMLBody();
+            // normalize
             $body = trim($body);
             $body = preg_replace('/\r\n|\r|\n/', "\n", $body);
             $body = preg_replace('/\n\s+/', "\n", $body);
@@ -375,6 +376,7 @@ class mailhelper
             $mail->content_html = $body;
 
             $body = $message->getTextBody();
+            // normalize
             if (empty($body)) {
                 $body = $message->getHTMLBody()
                     ? strip_tags(
