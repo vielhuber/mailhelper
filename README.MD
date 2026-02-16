@@ -45,22 +45,29 @@ vi config.json
         "imap": {
             "host": "outlook.office365.com",
             "port": 993,
+            "tenant_id": "***",
             "client_id": "***",
             "client_secret": "***",
-            "tenant_id": "***",
             "encryption": "tls"
         },
         "smtp": {
-            "host": "smtp.company.com",
-            "port": 465,
-            "username": "support@company.com",
-            "password": "***",
-            "encryption": "ssl"
+            "host": "smtp.office365.com",
+            "port": 587,
+            "tenant_id": "***",
+            "client_id": "***",
+            "client_secret": "***",
+            "encryption": "tls"
         },
         "test": false
     }
 }
 ```
+
+### exchange support
+
+- see [https://vielhuber.de/blog/zugriff-mit-php-auf-exchange-office-365/](https://vielhuber.de/blog/zugriff-mit-php-auf-exchange-office-365/)
+
+...
 
 ### test
 
@@ -87,7 +94,7 @@ vi config.json
     --mailbox "xxx@tld.com" \
     --subject "This is a test! 🚀" \
     --content "✅ Test <strong>successful</strong>!" \
-    --from-name "John Doe",
+    --from-name "John Doe"
     --to "aaa@tld.com" \
     --to '["aaa@tld.com", "bbb@tld.com"]' \
     --to '[{"name": "John Doe", "email": "aaa@tld.com"}, {"name": "Jane Doe", "email": "bbb@tld.com"}]' \

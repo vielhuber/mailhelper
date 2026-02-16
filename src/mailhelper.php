@@ -197,17 +197,46 @@ class mailhelper
             $mail->isSMTP();
             $mail->Host = $this->config[$mailbox]['smtp']['host'] ?? null;
             $mail->Port = $this->config[$mailbox]['smtp']['port'] ?? null;
-            $mail->Username = $this->config[$mailbox]['smtp']['username'] ?? null;
-            $mail->Password = $this->config[$mailbox]['smtp']['password'] ?? null;
             $mail->SMTPSecure = $this->config[$mailbox]['smtp']['encryption'] ?? null;
             $mail->setFrom($mailbox, $from_name ?? '');
             $mail->SMTPAuth = true;
+            $mail->CharSet = 'utf-8';
+            $mail->isHTML(true);
             $mail->SMTPOptions = [
                 'tls' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true],
                 'ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true]
             ];
-            $mail->CharSet = 'utf-8';
-            $mail->isHTML(true);
+
+            if ($this->config[$mailbox]['smtp']['tenant_id'] ?? null) {
+                $mail->AuthType = 'XOAUTH2';
+                $mail->setOAuth(
+                    new class (
+                        $mailbox,
+                        $this->getMicrosoftOAuthToken(
+                            $this->config[$mailbox]['smtp']['tenant_id'],
+                            $this->config[$mailbox]['smtp']['client_id'],
+                            $this->config[$mailbox]['smtp']['client_secret']
+                        )
+                    ) implements \PHPMailer\PHPMailer\OAuthTokenProvider {
+                        private string $userEmail;
+                        private string $accessToken;
+                        public function __construct(string $userEmail, string $accessToken)
+                        {
+                            $this->userEmail = $userEmail;
+                            $this->accessToken = $accessToken;
+                        }
+                        public function getOauth64(): string
+                        {
+                            return base64_encode(
+                                'user=' . $this->userEmail . "\001auth=Bearer " . $this->accessToken . "\001\001"
+                            );
+                        }
+                    }
+                );
+            } else {
+                $mail->Username = $this->config[$mailbox]['smtp']['username'] ?? null;
+                $mail->Password = $this->config[$mailbox]['smtp']['password'] ?? null;
+            }
 
             foreach (['to' => 'addAddress', 'cc' => 'addCC', 'bcc' => 'addBCC'] as $fields__key => $fields__value) {
                 if (!is_array(${$fields__key}) || isset(${$fields__key}['email'])) {
@@ -1242,46 +1271,20 @@ class mailhelper
     private function setupSettings(string $mailbox): array
     {
         $settings = [];
-        if ($this->config[$mailbox]['tenant_id'] ?? null) {
-            $ch = curl_init();
-            curl_setopt(
-                $ch,
-                CURLOPT_URL,
-                'https://login.microsoftonline.com/' . $this->config[$mailbox]['tenant_id'] . '/oauth2/v2.0/token'
-            );
-            curl_setopt(
-                $ch,
-                CURLOPT_POSTFIELDS,
-                http_build_query([
-                    'client_id' => $this->config[$mailbox]['client_id'],
-                    'client_secret' => $this->config[$mailbox]['client_secret'],
-                    'scope' => 'https://outlook.office365.com/.default',
-                    'grant_type' => 'client_credentials'
-                ])
-            );
-            curl_setopt($ch, CURLOPT_POST, 1);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            $curl_result = curl_exec($ch);
-            if (empty($curl_result)) {
-                throw new \Exception('Missing results.');
-            }
-            $curl_result = json_decode($curl_result);
-            if (empty($curl_result)) {
-                throw new \Exception('Error decoding json result.');
-            }
-            if (!isset($curl_result->access_token)) {
-                throw new \Exception('Missing access token from result.');
-            }
-            $access_token = $curl_result->access_token;
+        if ($this->config[$mailbox]['imap']['tenant_id'] ?? null) {
             $settings = [
                 'protocol' => 'imap',
                 'host' => $this->config[$mailbox]['imap']['host'] ?? null,
                 'port' => $this->config[$mailbox]['imap']['port'] ?? null,
-                'username' => $this->config[$mailbox]['imap']['username'] ?? null,
-                'password' => $access_token,
+                'username' => $mailbox,
+                'password' => $this->getMicrosoftOAuthToken(
+                    $this->config[$mailbox]['imap']['tenant_id'],
+                    $this->config[$mailbox]['imap']['client_id'],
+                    $this->config[$mailbox]['imap']['client_secret']
+                ),
                 'authentication' => 'oauth',
                 'encryption' => $this->config[$mailbox]['imap']['encryption'] ?? null,
-                'validate_cert' => false
+                'validate_cert' => true
             ];
         } else {
             $settings = [
@@ -1296,6 +1299,44 @@ class mailhelper
             ];
         }
         return $settings;
+    }
+
+    private function getMicrosoftOAuthToken(string $tenantId, string $clientId, string $clientSecret): string
+    {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, 'https://login.microsoftonline.com/' . $tenantId . '/oauth2/v2.0/token');
+        curl_setopt(
+            $ch,
+            CURLOPT_POSTFIELDS,
+            http_build_query([
+                'client_id' => $clientId,
+                'client_secret' => $clientSecret,
+                'scope' => 'https://outlook.office365.com/.default',
+                'grant_type' => 'client_credentials'
+            ])
+        );
+        curl_setopt($ch, CURLOPT_POST, 1);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $curl_result = curl_exec($ch);
+
+        if (empty($curl_result)) {
+            throw new \Exception('OAuth: token request failed (empty response).');
+        }
+
+        $curl_result = json_decode($curl_result, true);
+        if (empty($curl_result)) {
+            throw new \Exception('OAuth: invalid JSON response.');
+        }
+
+        if (isset($curl_result['error'])) {
+            throw new \Exception('OAuth: ' . ($curl_result['error_description'] ?? $curl_result['error']));
+        }
+
+        if (!isset($curl_result['access_token'])) {
+            throw new \Exception('OAuth: no access_token in response.');
+        }
+
+        return $curl_result['access_token'];
     }
 
     private static function getMailDataBasic(mixed $message): object
