@@ -67,8 +67,6 @@ vi config.json
 
 - see [https://vielhuber.de/blog/zugriff-mit-php-auf-exchange-office-365/](https://vielhuber.de/blog/zugriff-mit-php-auf-exchange-office-365/)
 
-...
-
 ### test
 
 `./vendor/bin/phpunit`
