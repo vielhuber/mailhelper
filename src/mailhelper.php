@@ -1213,7 +1213,7 @@ class mailhelper
         if (!isset($this->config[$args['mailbox']])) {
             throw new \Exception('Mailbox not found in configuration: ' . $args['mailbox']);
         }
-        if (!isset($this->config[$args['mailbox']]['imap'])) {
+        if (!isset($this->config[$args['mailbox']][$action === 'sendMail' ? 'smtp' : 'imap'])) {
             throw new \Exception('IMAP configuration not found for mailbox: ' . $args['mailbox']);
         }
         if ($action === 'fetchMails') {
