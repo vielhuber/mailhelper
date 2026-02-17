@@ -27,9 +27,13 @@ class mailhelper
 {
     public array $config = [];
 
-    public function __construct()
+    public function __construct($config = null)
     {
-        $this->config = $this->getConfig();
+        if ($config !== null && !empty($config)) {
+            $this->config = $config;
+        } else {
+            $this->config = $this->loadConfig();
+        }
     }
 
     /**
@@ -795,10 +799,14 @@ class mailhelper
      * with their IMAP/SMTP settings. Sensitive data (passwords, tokens) are included.
      *
      * @return array Configuration array keyed by mailbox email address
-     * @throws \Exception If config.json not found or contains invalid JSON
      */
     #[McpTool(name: 'get_config', description: 'Get the current mailhelper configuration with all mailbox settings.')]
     public function getConfig(): array
+    {
+        return $this->config;
+    }
+
+    private function loadConfig(): array
     {
         $configPath = self::getBasePath() . '/config.json';
         if (!file_exists($configPath)) {

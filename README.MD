@@ -239,6 +239,17 @@ $mailhelper->deleteFolder(
 );
 
 $mailhelper->getConfig();
+
+$mailhelper = new mailhelper(config: [
+    "info@example.com" => [
+        "imap" => [
+            "host" => "imap.example.com",
+            /* ... */
+        ],
+        /* ... */
+    },
+    /* ... */
+]);
 ```
 
 ### mcp
