@@ -30,7 +30,8 @@ vi config.json
             "port": 993,
             "username": "info@example.com",
             "password": "***",
-            "encryption": "ssl"
+            "encryption": "ssl",
+            "fix_order": false
         },
         "smtp": {
             "host": "smtp.example.com",
@@ -48,7 +49,8 @@ vi config.json
             "tenant_id": "***",
             "client_id": "***",
             "client_secret": "***",
-            "encryption": "tls"
+            "encryption": "tls",
+            "fix_order": false
         },
         "smtp": {
             "host": "smtp.office365.com",

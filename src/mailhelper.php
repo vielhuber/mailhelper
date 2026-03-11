@@ -72,6 +72,7 @@ class mailhelper
 
         $order_str =
             $order !== null && in_array(mb_strtolower($order), ['asc', 'desc']) ? mb_strtolower($order) : 'desc';
+        $fix_order = $this->config[$mailbox]['imap']['fix_order'] ?? false;
 
         $cm = new ClientManager();
         $client = $cm->make($settings);
@@ -96,27 +97,44 @@ class mailhelper
             $query->leaveUnread();
             $query->setFetchBody(false);
 
-            // this does not work server sided
-            // we therefore have to fetch all mails and limit & sort them by hand
-            $query->setFetchOrder($order_str);
-
-            $page = 1;
-            while (true) {
+            // some imap servers ignore fetch order, so we fetch everything and sort afterwards
+            if ($fix_order) {
+                $page = 1;
+                $full_count = null;
                 $paginator_limit = 10;
-                try {
-                    $paginator = @$query->paginate($paginator_limit, $page, 'imap_page');
-                } catch (\Throwable $e) {
-                    break;
+                while (true) {
+                    if ($full_count !== null && ($page - 1) * $paginator_limit >= $full_count) {
+                        break;
+                    }
+                    try {
+                        $paginator = $query->paginate($paginator_limit, $page, 'imap_page');
+                    } catch (\Throwable $e) {
+                        break;
+                    }
+                    if ($paginator->count() === 0) {
+                        break;
+                    }
+                    $full_count = $paginator->total();
+                    $messages = iterator_to_array($paginator);
+                    foreach ($messages as $messages__value) {
+                        if (self::checkFilter($filter, $messages__value) === false) {
+                            continue;
+                        }
+                        $mail = self::getMailDataBasic($messages__value);
+                        $mails[] = $mail;
+                        if (self::isCli()) {
+                            self::progress(count($mails), $full_count, 'Fetching emails...');
+                        }
+                    }
+                    $page++;
                 }
-                if ($paginator->count() === 0) {
-                    break;
+            } else {
+                $query->setFetchOrder($order_str);
+                if ($limit !== null) {
+                    $query->limit($limit);
                 }
-
-                // determine full count
-                $full_count = $paginator->total();
-
-                // convert iterator to array
-                $messages = iterator_to_array($paginator);
+                $messages = $query->get();
+                $full_count = $messages->total() ?? $messages->count();
 
                 foreach ($messages as $messages__value) {
                     if (self::checkFilter($filter, $messages__value) === false) {
@@ -128,22 +146,20 @@ class mailhelper
                         self::progress(count($mails), $full_count, 'Fetching emails...');
                     }
                 }
-                $page++;
             }
         }
 
-        // apply sort afterwards
-        usort($mails, function ($a, $b) use ($order_str) {
-            if ($order_str === 'asc') {
-                return strtotime($a->date) <=> strtotime($b->date);
-            } else {
+        if ($fix_order) {
+            // apply sort afterwards
+            usort($mails, function ($a, $b) use ($order_str) {
+                if ($order_str === 'asc') {
+                    return strtotime($a->date) <=> strtotime($b->date);
+                }
                 return strtotime($b->date) <=> strtotime($a->date);
-            }
-        });
+            });
 
-        // apply limit afterwards
-        if ($limit !== null) {
-            if (count($mails) > $limit) {
+            // apply limit afterwards
+            if ($limit !== null && count($mails) > $limit) {
                 $mails = array_slice($mails, 0, $limit);
             }
         }
