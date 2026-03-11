@@ -125,13 +125,31 @@ class Test extends \PHPUnit\Framework\TestCase
                 }
             }
 
-            // viewMail
+            // viewMail (default: eml and attachment content are null)
             $response = $this->mailhelper->viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
             //$this->log($response);
             $this->assertSame($response->id, $mail_id);
             $this->assertSame($response->subject, $test_subject);
             $this->assertStringContainsString($test_content, $response->content_html);
             $this->assertStringContainsString(strip_tags($test_content), $response->content_plain);
+            $this->assertNull($response->eml);
+            $this->assertNotEmpty($response->attachments);
+            $this->assertNull($response->attachments[0]->content);
+            $this->sleep();
+
+            // viewMail with include_eml and include_attachments
+            $response = $this->mailhelper->viewMail(
+                mailbox: $mailboxes__value,
+                folder: $folder_inbox,
+                id: $mail_id,
+                include_eml: true,
+                include_attachments: true
+            );
+            $this->assertNotNull($response->eml);
+            $this->assertStringStartsWith('data:message/rfc822;base64,', $response->eml);
+            $this->assertNotEmpty($response->attachments);
+            $this->assertNotNull($response->attachments[0]->content);
+            $this->assertStringStartsWith('data:', $response->attachments[0]->content);
             $this->sleep();
 
             // readMail

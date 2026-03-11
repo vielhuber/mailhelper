@@ -107,7 +107,9 @@ vi config.json
 ./vendor/bin/mailhelper.php view-mail \
     --mailbox "xxx@tld.com" \
     --folder "INBOX/foo/bar" \
-    --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx" \
+    --include-eml \
+    --include-attachments
 
 ./vendor/bin/mailhelper.php move-mail \
     --mailbox "xxx@tld.com" \
@@ -192,7 +194,9 @@ $mailhelper->sendMail(
 $mailhelper->viewMail(
     mailbox: 'xxx@tld.com',
     folder: 'INBOX/foo/bar',
-    id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+    id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+    include_eml: true,
+    include_attachments: true
 );
 
 $mailhelper->moveMail(

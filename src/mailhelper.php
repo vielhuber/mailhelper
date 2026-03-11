@@ -372,24 +372,33 @@ class mailhelper
     }
 
     /**
-     * View a single email with full content and attachments.
+     * View a single email with full content and optional attachments/EML.
      *
-     * Retrieves the complete email including HTML/plain-text body, attachments (as base64),
-     * and the original EML file. Images embedded via CID are automatically converted to base64.
+     * Retrieves the complete email including HTML/plain-text body. Optionally includes
+     * the original EML file and attachment contents (as base64 data URIs).
+     * Images embedded via CID are automatically converted to base64.
      *
      * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
      * @param string $folder Folder containing the email (required, e.g., 'INBOX')
      * @param string $id Message-ID of the email to retrieve (required)
-     * @return object|null Email object with: id, from, to, cc, date, subject, content_html, content_plain, attachments, eml
+     * @param bool $include_eml Whether to include the raw EML as base64 data URI in ->eml (optional, default: false)
+     * @param bool $include_attachments Whether to include attachment contents as base64 data URIs in ->attachments[n]->content (optional, default: false)
+     * @return object|null Email object with: id, from, to, cc, date, subject, content_html, content_plain, attachments (->content is null unless include_attachments), eml (null unless include_eml)
      * @throws \Exception If message ID not found or connection fails
      */
     #[
         McpTool(
             name: 'view_mail',
-            description: 'Retrieve full email content including HTML body, plain text, attachments (base64), and original EML file.'
+            description: 'Retrieve full email content including HTML body, plain text, and attachment metadata. Use include_eml=true for the raw EML (base64), include_attachments=true for attachment contents (base64).'
         )
     ]
-    public function viewMail(string $mailbox, string $folder, string $id): ?object
+    public function viewMail(
+        string $mailbox,
+        string $folder,
+        string $id,
+        bool $include_eml = false,
+        bool $include_attachments = false
+    ): ?object
     {
         $this->validateInput('viewMail', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
@@ -440,9 +449,12 @@ class mailhelper
             $body = preg_replace('/\n\n+/', "\n", $body);
             $mail->content_plain = $body;
 
-            $mail->eml =
-                'data:message/rfc822;base64,' .
-                base64_encode(json_decode(json_encode($message->getHeader()), true)['raw'] . $message->getRawBody());
+            $mail->eml = $include_eml
+                ? 'data:message/rfc822;base64,' .
+                    base64_encode(
+                        json_decode(json_encode($message->getHeader()), true)['raw'] . $message->getRawBody()
+                    )
+                : null;
 
             $mail->attachments = [];
             $attachments = $message->getAttachments();
@@ -450,11 +462,12 @@ class mailhelper
                 foreach ($attachments as $attachments__value) {
                     $mail->attachments[] = (object) [
                         'name' => $attachments__value->getFilename(),
-                        'content' =>
-                            'data:' .
-                            $attachments__value->getContentType() .
-                            ';base64,' .
-                            base64_encode($attachments__value->getContent())
+                        'content' => $include_attachments
+                            ? 'data:' .
+                                $attachments__value->getContentType() .
+                                ';base64,' .
+                                base64_encode($attachments__value->getContent())
+                            : null
                     ];
                 }
             }
@@ -961,7 +974,9 @@ class mailhelper
                 $response = $mailhelper->viewMail(
                     mailbox: $options['mailbox'] ?? null,
                     folder: $options['folder'] ?? null,
-                    id: $options['id'] ?? null
+                    id: $options['id'] ?? null,
+                    include_eml: ($options['include_eml'] ?? false) === true,
+                    include_attachments: ($options['include_attachments'] ?? false) === true
                 );
             }
 
