@@ -135,6 +135,9 @@ class Test extends \PHPUnit\Framework\TestCase
             $this->assertNull($response->eml);
             $this->assertNotEmpty($response->attachments);
             $this->assertNull($response->attachments[0]->content);
+            $this->assertNotNull($response->attachments[0]->mime_type);
+            $this->assertIsInt($response->attachments[0]->size);
+            $this->assertGreaterThan(0, $response->attachments[0]->size);
             $this->sleep();
 
             // viewMail with include_eml and include_attachments

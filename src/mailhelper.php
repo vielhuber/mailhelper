@@ -46,7 +46,7 @@ class mailhelper
      * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
      * @param string $folder Folder name to fetch from (required, e.g., 'INBOX')
      * @param string|null $filter Filter as JSON string, object, or array: {"date_from": "2024-01-01", "date_until": "2024-12-31", "subject": "test", "to": "email@example.com"} (optional)
-     * @param int|null $limit Maximum number of emails to return (optional, default: 100)
+     * @param int|null $limit Maximum number of emails to return (optional, default: 10)
      * @param string|null $order Sort order: 'asc' (oldest first) or 'desc' (newest first, default) (optional)
      * @return array List of email objects containing: id, from, to, cc, date, subject, seen
      * @throws \Exception If mailbox not configured or IMAP connection fails
@@ -61,7 +61,7 @@ class mailhelper
         string $mailbox,
         string $folder,
         #[Schema(definition: ['type' => ['string', 'null']])] string|array|null $filter = null,
-        ?int $limit = 100,
+        ?int $limit = 10,
         ?string $order = null
     ): array {
         $filter = self::parseJsonParam($filter);
@@ -383,7 +383,7 @@ class mailhelper
      * @param string $id Message-ID of the email to retrieve (required)
      * @param bool $include_eml Whether to include the raw EML as base64 data URI in ->eml (optional, default: false)
      * @param bool $include_attachments Whether to include attachment contents as base64 data URIs in ->attachments[n]->content (optional, default: false)
-     * @return object|null Email object with: id, from, to, cc, date, subject, content_html, content_plain, attachments (->content is null unless include_attachments), eml (null unless include_eml)
+     * @return object|null Email object with: id, from, to, cc, date, subject, content_html, content_plain, attachments (->name, ->mime_type, ->size, ->content is null unless include_attachments), eml (null unless include_eml)
      * @throws \Exception If message ID not found or connection fails
      */
     #[
@@ -398,8 +398,7 @@ class mailhelper
         string $id,
         bool $include_eml = false,
         bool $include_attachments = false
-    ): ?object
-    {
+    ): ?object {
         $this->validateInput('viewMail', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
 
@@ -451,9 +450,7 @@ class mailhelper
 
             $mail->eml = $include_eml
                 ? 'data:message/rfc822;base64,' .
-                    base64_encode(
-                        json_decode(json_encode($message->getHeader()), true)['raw'] . $message->getRawBody()
-                    )
+                    base64_encode(json_decode(json_encode($message->getHeader()), true)['raw'] . $message->getRawBody())
                 : null;
 
             $mail->attachments = [];
@@ -462,6 +459,8 @@ class mailhelper
                 foreach ($attachments as $attachments__value) {
                     $mail->attachments[] = (object) [
                         'name' => $attachments__value->getFilename(),
+                        'mime_type' => $attachments__value->getContentType(),
+                        'size' => strlen($attachments__value->getContent()),
                         'content' => $include_attachments
                             ? 'data:' .
                                 $attachments__value->getContentType() .
@@ -952,7 +951,7 @@ class mailhelper
                     mailbox: $options['mailbox'] ?? null,
                     folder: $options['folder'] ?? null,
                     filter: !empty($filter) ? $filter : null,
-                    limit: isset($options['limit']) ? (int) $options['limit'] : 100,
+                    limit: isset($options['limit']) ? (int) $options['limit'] : 10,
                     order: $options['order'] ?? null
                 );
             }
