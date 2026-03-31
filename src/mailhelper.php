@@ -46,7 +46,7 @@ class mailhelper
      * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
      * @param string $folder Folder name to fetch from (required, e.g., 'INBOX')
      * @param string|null $filter Filter as JSON string, object, or array: {"date_from": "2024-01-01", "date_until": "2024-12-31", "subject": "test", "to": "email@example.com"} (optional)
-     * @param int|null $limit Maximum number of emails to return (optional, default: 10)
+     * @param int|null $limit Maximum number of emails to return (optional, default: 250)
      * @param string|null $order Sort order: 'asc' (oldest first) or 'desc' (newest first, default) (optional)
      * @return array List of email objects containing: id, from, to, cc, date, subject, seen
      * @throws \Exception If mailbox not configured or IMAP connection fails
@@ -61,7 +61,7 @@ class mailhelper
         string $mailbox,
         string $folder,
         #[Schema(definition: ['type' => ['string', 'null']])] string|array|null $filter = null,
-        ?int $limit = 10,
+        ?int $limit = 250,
         ?string $order = null
     ): array {
         $filter = self::parseJsonParam($filter);
@@ -951,7 +951,7 @@ class mailhelper
                     mailbox: $options['mailbox'] ?? null,
                     folder: $options['folder'] ?? null,
                     filter: !empty($filter) ? $filter : null,
-                    limit: isset($options['limit']) ? (int) $options['limit'] : 10,
+                    limit: isset($options['limit']) ? (int) $options['limit'] : 250,
                     order: $options['order'] ?? null
                 );
             }
