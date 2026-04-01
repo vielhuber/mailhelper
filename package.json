@@ -1,6 +1,6 @@
 {
-  "devDependencies": {
-    "@prettier/plugin-php": ">=0.22",
-    "prettier": ">=3"
-  }
+    "devDependencies": {
+        "@prettier/plugin-php": ">=0.22",
+        "prettier": ">=3"
+    }
 }

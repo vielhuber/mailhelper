@@ -1,4 +1,10 @@
 [![build status](https://github.com/vielhuber/mailhelper/actions/workflows/ci.yml/badge.svg)](https://github.com/vielhuber/mailhelper/actions)
+[![GitHub Tag](https://img.shields.io/github/v/tag/vielhuber/mailhelper)](https://github.com/vielhuber/mailhelper/tags)
+[![Code Style](https://img.shields.io/badge/code_style-psr--12-ff69b4.svg)](https://www.php-fig.org/psr/psr-12/)
+[![License](https://img.shields.io/github/license/vielhuber/mailhelper)](https://github.com/vielhuber/mailhelper/blob/main/LICENSE.md)
+[![Last Commit](https://img.shields.io/github/last-commit/vielhuber/mailhelper)](https://github.com/vielhuber/mailhelper/commits)
+[![PHP Version Support](https://img.shields.io/packagist/php-v/vielhuber/mailhelper)](https://packagist.org/packages/vielhuber/mailhelper)
+[![Packagist Downloads](https://img.shields.io/packagist/dt/vielhuber/mailhelper)](https://packagist.org/packages/vielhuber/mailhelper)
 
 # 📫 mailhelper 📫
 
