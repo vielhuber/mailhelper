@@ -26,12 +26,11 @@ class Test extends \PHPUnit\Framework\TestCase
         foreach ($this->mailboxes as $mailboxes__value) {
             // getFolders
             $response = $this->mailhelper->getFolders(mailbox: $mailboxes__value);
-            //$this->log($response);
-            $this->assertTrue(count($response) > 0);
+            $this->assertGreaterThan(0, $response['count']);
+            $this->assertSame($response['count'], count($response['items']));
 
             // createFolder
             $prefix = $this->determinePrefix($mailboxes__value);
-            //$this->log($prefix);
             $folder_old = $prefix . 'Testüüü Folder ' . mt_rand(1000, 9999);
             $folder_new = $prefix . 'Renamedääää Test Folder ' . mt_rand(1000, 9999);
             try {
@@ -40,15 +39,13 @@ class Test extends \PHPUnit\Framework\TestCase
             } catch (\Throwable $e) {
             }
             $response = $this->mailhelper->createFolder(mailbox: $mailboxes__value, name: $folder_old);
-            //$this->log($response);
             $this->assertTrue($response);
 
             $this->sleep();
 
             $response = $this->mailhelper->getFolders(mailbox: $mailboxes__value);
-            //$this->log($response);
-            $this->assertTrue(count($response) > 0);
-            $this->assertContains($folder_old, $response);
+            $this->assertGreaterThan(0, $response['count']);
+            $this->assertContains($folder_old, $response['items']);
 
             // renameFolder
             $response = $this->mailhelper->renameFolder(
@@ -56,27 +53,23 @@ class Test extends \PHPUnit\Framework\TestCase
                 name_old: $folder_old,
                 name_new: $folder_new
             );
-            //$this->log($response);
             $this->assertTrue($response);
 
             $this->sleep();
 
             $response = $this->mailhelper->getFolders(mailbox: $mailboxes__value);
-            //$this->log($response);
-            $this->assertContains($folder_new, $response);
-            $this->assertNotContains($folder_old, $response);
+            $this->assertContains($folder_new, $response['items']);
+            $this->assertNotContains($folder_old, $response['items']);
 
             $this->sleep();
 
             // deleteFolder
             $response = $this->mailhelper->deleteFolder(mailbox: $mailboxes__value, name: $folder_new);
-            //$this->log($response);
             $this->assertTrue($response);
             $this->sleep();
             $response = $this->mailhelper->getFolders(mailbox: $mailboxes__value);
-            //$this->log($response);
-            $this->assertNotContains($folder_new, $response);
-            $this->assertNotContains($folder_old, $response);
+            $this->assertNotContains($folder_new, $response['items']);
+            $this->assertNotContains($folder_old, $response['items']);
         }
     }
 
@@ -115,10 +108,10 @@ class Test extends \PHPUnit\Framework\TestCase
                 limit: 10, // don't limit 10, because other mails can income that disturb the test
                 order: 'desc'
             );
-            //$this->log($response);
-            $this->assertTrue(count($response) > 0);
+            $this->assertGreaterThan(0, $response['count']);
+            $this->assertSame($response['count'], count($response['items']));
             $mail_id = null;
-            foreach ($response as $response__value) {
+            foreach ($response['items'] as $response__value) {
                 if ($response__value->subject === $test_subject) {
                     $mail_id = $response__value->id;
                     break;
@@ -188,10 +181,8 @@ class Test extends \PHPUnit\Framework\TestCase
             $response = $this->mailhelper->deleteMail(
                 mailbox: $mailboxes__value,
                 folder: $folder_other,
-                id: $mail_id,
-                delete: true
+                id: $mail_id
             );
-            //$this->log($response);
             $this->assertTrue($response);
             $this->sleep();
 
@@ -205,7 +196,7 @@ class Test extends \PHPUnit\Framework\TestCase
     {
         $response = $this->mailhelper->getFolders($mailbox);
         $prefix = 'INBOX.';
-        if (count(array_filter($response, fn($f) => str_starts_with($f, 'INBOX/'))) > 0) {
+        if (count(array_filter($response['items'], fn($f) => str_starts_with($f, 'INBOX/'))) > 0) {
             $prefix = 'INBOX/';
         }
         return $prefix;
@@ -213,7 +204,7 @@ class Test extends \PHPUnit\Framework\TestCase
 
     private function determineFolders($mailbox): array
     {
-        $folders = $this->mailhelper->getFolders(mailbox: $mailbox);
+        $folders = $this->mailhelper->getFolders(mailbox: $mailbox)['items'];
         $folder_inbox = null;
         foreach (['INBOX', 'Inbox', 'Posteingang'] as $folder_inbox__value) {
             if (count(array_filter($folders, fn($folders__value) => $folders__value === $folder_inbox__value)) > 0) {

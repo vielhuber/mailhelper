@@ -39,30 +39,36 @@ class mailhelper
     /**
      * Fetch emails from a configured mailbox via IMAP.
      *
-     * Retrieves email headers from one or more folders with optional filtering and pagination.
-     * Supports date range filtering, subject/content search, and recipient filtering.
-     * Results are sorted by date and limited to the specified count.
+     * Returns an envelope with `count` (number of returned mails) and `items`
+     * (array of mail objects). Use `count` as the authoritative number.
      *
-     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
-     * @param string $folder Folder name to fetch from (required, e.g., 'INBOX')
-     * @param string|null $filter Filter as JSON string, object, or array: {"date_from": "2024-01-01", "date_until": "2024-12-31", "subject": "test", "to": "email@example.com"} (optional)
-     * @param int|null $limit Maximum number of emails to return (optional, default: 250)
-     * @param string|null $order Sort order: 'asc' (oldest first) or 'desc' (newest first, default) (optional)
-     * @return array List of email objects containing: id, from, to, cc, date, subject, seen
-     * @throws \Exception If mailbox not configured or IMAP connection fails
+     * @param string $mailbox Email address of the mailbox (must exist in config.json).
+     * @param string $folder Folder name to fetch from (e.g. 'INBOX').
+     * @param array|null $filter Structured filter — properties: date_from, date_until, subject, to. Omit for no filter.
+     * @param int|null $limit Maximum number of emails to return. Default 50. Pick a small value (e.g. 10) when the user asks for few mails.
+     * @param string|null $order Sort order: 'desc' (newest first, default) or 'asc' (oldest first).
      */
     #[
         McpTool(
             name: 'fetch_mails',
-            description: 'Fetch emails from a mailbox. Optional filter as JSON: {"date_from": "YYYY-MM-DD", "date_until": "YYYY-MM-DD", "subject": "text", "to": "email"}'
+            description: 'Fetch email headers from a mailbox folder. Supports structured filtering, limit (default 50) and sort order. Returns {count, items} envelope with date-sorted results.'
         )
     ]
     public function fetchMails(
         string $mailbox,
         string $folder,
-        #[Schema(definition: ['type' => ['string', 'null']])] string|array|null $filter = null,
-        ?int $limit = 250,
-        ?string $order = null
+        #[Schema(
+            type: 'object',
+            properties: [
+                'date_from' => ['type' => 'string', 'format' => 'date', 'description' => 'Inclusive lower date bound (YYYY-MM-DD).'],
+                'date_until' => ['type' => 'string', 'format' => 'date', 'description' => 'Inclusive upper date bound (YYYY-MM-DD).'],
+                'subject' => ['type' => 'string', 'description' => 'Substring that must appear in the subject.'],
+                'to' => ['type' => 'string', 'description' => 'Recipient email address to match.']
+            ],
+            additionalProperties: false
+        )] ?array $filter = null,
+        #[Schema(type: 'integer', minimum: 1)] ?int $limit = 50,
+        #[Schema(type: 'string', enum: ['asc', 'desc'])] ?string $order = null
     ): array {
         $filter = self::parseJsonParam($filter);
         $this->validateInput('fetchMails', get_defined_vars());
@@ -79,17 +85,11 @@ class mailhelper
         $client->connect();
         $folders = $client->getFolders(false);
         foreach ($folders as $folders__value) {
-            if ($folder !== null) {
-                if (is_array($folder) && !in_array($folders__value->full_name, $folder)) {
-                    continue;
-                }
-                if (
-                    is_string($folder) &&
-                    $folders__value->full_name !== $folder &&
-                    self::decodeImapUtf7($folders__value->full_name) !== $folder
-                ) {
-                    continue;
-                }
+            if (
+                $folders__value->full_name !== $folder &&
+                self::decodeImapUtf7($folders__value->full_name) !== $folder
+            ) {
+                continue;
             }
 
             $query = $folders__value->query();
@@ -169,7 +169,7 @@ class mailhelper
         }
 
         $client->disconnect();
-        return $mails;
+        return ['count' => count($mails), 'items' => $mails];
     }
 
     /**
@@ -203,7 +203,7 @@ class mailhelper
         #[Schema(definition: ['type' => ['string']])] string|array $to,
         #[Schema(definition: ['type' => ['string', 'null']])] string|array|null $cc = null,
         #[Schema(definition: ['type' => ['string', 'null']])] string|array|null $bcc = null,
-        ?string $from_name = null,
+        #[Schema(definition: ['type' => ['string', 'null']])] ?string $from_name = null,
         #[Schema(definition: ['type' => ['string', 'null']])] string|array|null $attachments = null
     ): bool {
         $to = self::parseJsonParam($to);
@@ -410,7 +410,6 @@ class mailhelper
         $return = null;
         foreach ($folders as $folders__value) {
             if (
-                $folder !== null &&
                 $folders__value->full_name !== $folder &&
                 self::decodeImapUtf7($folders__value->full_name) !== $folder
             ) {
@@ -522,7 +521,6 @@ class mailhelper
         $folders = $client->getFolders(false);
         foreach ($folders as $folders__value) {
             if (
-                $folder !== null &&
                 $folders__value->full_name !== $folder &&
                 self::decodeImapUtf7($folders__value->full_name) !== $folder
             ) {
@@ -532,8 +530,8 @@ class mailhelper
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
-            //print_r([$name, self::encodeImapUtf7($name)]);
             $message->move(self::encodeImapUtf7($name), false, true);
+            break;
         }
         $client->disconnect();
         return true;
@@ -568,7 +566,6 @@ class mailhelper
         $folders = $client->getFolders(false);
         foreach ($folders as $folders__value) {
             if (
-                $folder !== null &&
                 $folders__value->full_name !== $folder &&
                 self::decodeImapUtf7($folders__value->full_name) !== $folder
             ) {
@@ -579,6 +576,7 @@ class mailhelper
                 throw new \Exception('Message id not found: ' . $id);
             }
             $message->delete();
+            break;
         }
         $client->disconnect();
         return true;
@@ -607,7 +605,6 @@ class mailhelper
         $folders = $client->getFolders(false);
         foreach ($folders as $folders__value) {
             if (
-                $folder !== null &&
                 $folders__value->full_name !== $folder &&
                 self::decodeImapUtf7($folders__value->full_name) !== $folder
             ) {
@@ -618,6 +615,7 @@ class mailhelper
                 throw new \Exception('Message id not found: ' . $id);
             }
             $message->setFlag('Seen');
+            break;
         }
         $client->disconnect();
         return true;
@@ -646,7 +644,6 @@ class mailhelper
         $folders = $client->getFolders(false);
         foreach ($folders as $folders__value) {
             if (
-                $folder !== null &&
                 $folders__value->full_name !== $folder &&
                 self::decodeImapUtf7($folders__value->full_name) !== $folder
             ) {
@@ -657,6 +654,7 @@ class mailhelper
                 throw new \Exception('Message id not found: ' . $id);
             }
             $message->unsetFlag('Seen');
+            break;
         }
         $client->disconnect();
         return true;
@@ -665,17 +663,16 @@ class mailhelper
     /**
      * List all folders in a mailbox.
      *
-     * Retrieves all available IMAP folders from the mailbox. Folders are sorted alphabetically
-     * with INBOX and its subfolders appearing first. Folder names are returned as-is (may be mUTF-7 encoded).
+     * Returns an envelope with `count` and `items` (folder names). INBOX and
+     * its subfolders appear first, remaining folders sorted alphabetically.
+     * Folder names are returned as-is (may be mUTF-7 encoded).
      *
-     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
-     * @return array List of folder names (e.g., ['INBOX', 'INBOX/Work', 'Archive', 'Sent', 'Trash'])
-     * @throws \Exception If mailbox not configured or connection fails
+     * @param string $mailbox Email address of the mailbox (must exist in config.json).
      */
     #[
         McpTool(
             name: 'get_folders',
-            description: 'List all IMAP folders in a mailbox. Returns folder names sorted with INBOX first.'
+            description: 'List all IMAP folders in a mailbox. Returns {count, items} envelope with INBOX sorted first.'
         )
     ]
     public function getFolders(string $mailbox): array
@@ -704,7 +701,7 @@ class mailhelper
         });
 
         $client->disconnect();
-        return $folders;
+        return ['count' => count($folders), 'items' => $folders];
     }
 
     /**
@@ -821,17 +818,37 @@ class mailhelper
     }
 
     /**
-     * Get the current mailbox configuration.
+     * Get the current mailbox configuration (secrets masked).
      *
-     * Returns the parsed configuration from config.json containing all configured mailboxes
-     * with their IMAP/SMTP settings. Sensitive data (passwords, tokens) are included.
-     *
-     * @return array Configuration array keyed by mailbox email address
+     * Returns the parsed configuration from config.json. Values of keys matching
+     * password / secret / token / api_key patterns are replaced with '***' so
+     * credentials never reach MCP clients or LLM context.
      */
-    #[McpTool(name: 'get_config', description: 'Get the current mailhelper configuration with all mailbox settings.')]
+    #[McpTool(name: 'get_config', description: 'Get the mailhelper configuration (mailbox list + IMAP/SMTP settings). Secrets are masked.')]
     public function getConfig(): array
     {
-        return $this->config;
+        return self::maskSecrets($this->config);
+    }
+
+    // recursively replace values of credential-like keys with '***'. matches any
+    // key containing password/secret/token/api_key (case-insensitive). key names
+    // are preserved so the LLM still sees which fields exist.
+    private static function maskSecrets(array $data): array
+    {
+        $sensitivePattern = '/(password|secret|token|api[_-]?key|authorization)/i';
+        $result = [];
+        foreach ($data as $key => $value) {
+            if (is_array($value)) {
+                $result[$key] = self::maskSecrets($value);
+                continue;
+            }
+            if (is_string($key) && preg_match($sensitivePattern, $key) === 1 && $value !== null && $value !== '') {
+                $result[$key] = '***';
+                continue;
+            }
+            $result[$key] = $value;
+        }
+        return $result;
     }
 
     private function loadConfig(): array
@@ -951,7 +968,7 @@ class mailhelper
                     mailbox: $options['mailbox'] ?? null,
                     folder: $options['folder'] ?? null,
                     filter: !empty($filter) ? $filter : null,
-                    limit: isset($options['limit']) ? (int) $options['limit'] : 250,
+                    limit: isset($options['limit']) ? (int) $options['limit'] : 50,
                     order: $options['order'] ?? null
                 );
             }
@@ -1024,14 +1041,14 @@ class mailhelper
             }
 
             if ($action === 'rename-folder') {
-                $response = $mailhelper->renameFolders(
+                $response = $mailhelper->renameFolder(
                     mailbox: $options['mailbox'] ?? null,
                     name_old: $options['name_old'] ?? null,
                     name_new: $options['name_new'] ?? null
                 );
             }
 
-            if ($action === 'delete-folders') {
+            if ($action === 'delete-folder') {
                 $response = $mailhelper->deleteFolder(
                     mailbox: $options['mailbox'] ?? null,
                     name: $options['name'] ?? null

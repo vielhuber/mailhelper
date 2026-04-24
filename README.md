@@ -147,7 +147,8 @@ vi config.json
 
 ./vendor/bin/mailhelper.php rename-folder \
     --mailbox "xxx@tld.com"
-    --name "INBOX/foo"
+    --name-old "INBOX/foo"
+    --name-new "INBOX/bar"
 
 ./vendor/bin/mailhelper.php delete-folder \
     --mailbox "xxx@tld.com"
@@ -242,7 +243,7 @@ $mailhelper->createFolder(
 $mailhelper->renameFolder(
     mailbox: 'xxx@tld.com'
     name_old: 'INBOX/foo',
-    name_new: 'INBOX/foo'
+    name_new: 'INBOX/bar'
 );
 
 $mailhelper->deleteFolder(
