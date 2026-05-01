@@ -83,16 +83,10 @@ class mailhelper
         $cm = new ClientManager();
         $client = $cm->make($settings);
         $client->connect();
-        $folders = $client->getFolders(false);
-        foreach ($folders as $folders__value) {
-            if (
-                $folders__value->full_name !== $folder &&
-                self::decodeImapUtf7($folders__value->full_name) !== $folder
-            ) {
-                continue;
-            }
+        try {
+            $sourceFolder = self::findFolderOrFail($client, $folder);
 
-            $query = $folders__value->query();
+            $query = $sourceFolder->query();
             $query->all();
             $query->leaveUnread();
             $query->setFetchBody(false);
@@ -147,29 +141,30 @@ class mailhelper
                     }
                 }
             }
-        }
 
-        if ($fix_order) {
-            // apply sort afterwards
-            usort($mails, function ($a, $b) use ($order_str) {
-                if ($order_str === 'asc') {
-                    return strtotime($a->date) <=> strtotime($b->date);
+            if ($fix_order) {
+                // apply sort afterwards
+                usort($mails, function ($a, $b) use ($order_str) {
+                    if ($order_str === 'asc') {
+                        return strtotime($a->date) <=> strtotime($b->date);
+                    }
+                    return strtotime($b->date) <=> strtotime($a->date);
+                });
+
+                // apply limit afterwards
+                if ($limit !== null && count($mails) > $limit) {
+                    $mails = array_slice($mails, 0, $limit);
                 }
-                return strtotime($b->date) <=> strtotime($a->date);
-            });
-
-            // apply limit afterwards
-            if ($limit !== null && count($mails) > $limit) {
-                $mails = array_slice($mails, 0, $limit);
             }
-        }
 
-        if (self::isCli()) {
-            echo PHP_EOL;
-        }
+            if (self::isCli()) {
+                echo PHP_EOL;
+            }
 
-        $client->disconnect();
-        return ['count' => count($mails), 'items' => $mails];
+            return ['count' => count($mails), 'items' => $mails];
+        } finally {
+            $client->disconnect();
+        }
     }
 
     /**
@@ -383,8 +378,8 @@ class mailhelper
      * @param string $id Message-ID of the email to retrieve (required)
      * @param bool $include_eml Whether to include the raw EML as base64 data URI in ->eml (optional, default: false)
      * @param bool $include_attachments Whether to include attachment contents as base64 data URIs in ->attachments[n]->content (optional, default: false)
-     * @return object|null Email object with: id, from, to, cc, date, subject, content_html, content_plain, attachments (->name, ->mime_type, ->size, ->content is null unless include_attachments), eml (null unless include_eml)
-     * @throws \Exception If message ID not found or connection fails
+     * @return object Email object with: id, from, to, cc, date, subject, content_html, content_plain, attachments (->name, ->mime_type, ->size, ->content is null unless include_attachments), eml (null unless include_eml)
+     * @throws \Exception If folder doesn't exist, message ID not found, or connection fails
      */
     #[
         McpTool(
@@ -398,24 +393,16 @@ class mailhelper
         string $id,
         bool $include_eml = false,
         bool $include_attachments = false
-    ): ?object {
+    ): object {
         $this->validateInput('viewMail', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
 
         $cm = new ClientManager();
         $client = $cm->make($settings);
         $client->connect();
-        $folders = $client->getFolders(false);
-
-        $return = null;
-        foreach ($folders as $folders__value) {
-            if (
-                $folders__value->full_name !== $folder &&
-                self::decodeImapUtf7($folders__value->full_name) !== $folder
-            ) {
-                continue;
-            }
-            $message = $folders__value->query()->whereMessageId($id)->get()->first();
+        try {
+            $sourceFolder = self::findFolderOrFail($client, $folder);
+            $message = $sourceFolder->query()->whereMessageId($id)->get()->first();
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
@@ -483,12 +470,10 @@ class mailhelper
                 );
             }
 
-            $return = $mail;
-            break;
+            return $mail;
+        } finally {
+            $client->disconnect();
         }
-
-        $client->disconnect();
-        return $return;
     }
 
     /**
@@ -518,23 +503,49 @@ class mailhelper
         $cm = new ClientManager();
         $client = $cm->make($settings);
         $client->connect();
-        $folders = $client->getFolders(false);
-        foreach ($folders as $folders__value) {
-            if (
-                $folders__value->full_name !== $folder &&
-                self::decodeImapUtf7($folders__value->full_name) !== $folder
-            ) {
-                continue;
+        try {
+            $folders = $client->getFolders(false);
+            $allNames = [];
+            $decodedOnly = [];
+            $sourceFolder = null;
+            foreach ($folders as $folders__value) {
+                $encoded = $folders__value->full_name;
+                $decoded = self::decodeImapUtf7($encoded);
+                $allNames[] = $encoded;
+                if ($decoded !== $encoded) {
+                    $allNames[] = $decoded;
+                }
+                $decodedOnly[] = $decoded;
+                if ($encoded === $folder || $decoded === $folder) {
+                    $sourceFolder = $folders__value;
+                }
             }
-            $message = $folders__value->query()->whereMessageId($id)->get()->first();
+            if ($sourceFolder === null) {
+                throw new \Exception(
+                    'Source folder does not exist: "' .
+                        $folder .
+                        '". Available folders: ' .
+                        implode(', ', $decodedOnly)
+                );
+            }
+            if (!in_array($name, $allNames, true)) {
+                throw new \Exception(
+                    'Target folder does not exist: "' .
+                        $name .
+                        '". Available folders: ' .
+                        implode(', ', $decodedOnly)
+                );
+            }
+
+            $message = $sourceFolder->query()->whereMessageId($id)->get()->first();
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
             $message->move(self::encodeImapUtf7($name), false, true);
-            break;
+            return true;
+        } finally {
+            $client->disconnect();
         }
-        $client->disconnect();
-        return true;
     }
 
     /**
@@ -563,23 +574,17 @@ class mailhelper
         $cm = new ClientManager();
         $client = $cm->make($settings);
         $client->connect();
-        $folders = $client->getFolders(false);
-        foreach ($folders as $folders__value) {
-            if (
-                $folders__value->full_name !== $folder &&
-                self::decodeImapUtf7($folders__value->full_name) !== $folder
-            ) {
-                continue;
-            }
-            $message = $folders__value->query()->whereMessageId($id)->get()->first();
+        try {
+            $sourceFolder = self::findFolderOrFail($client, $folder);
+            $message = $sourceFolder->query()->whereMessageId($id)->get()->first();
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
             $message->delete();
-            break;
+            return true;
+        } finally {
+            $client->disconnect();
         }
-        $client->disconnect();
-        return true;
     }
 
     /**
@@ -602,23 +607,17 @@ class mailhelper
         $cm = new ClientManager();
         $client = $cm->make($settings);
         $client->connect();
-        $folders = $client->getFolders(false);
-        foreach ($folders as $folders__value) {
-            if (
-                $folders__value->full_name !== $folder &&
-                self::decodeImapUtf7($folders__value->full_name) !== $folder
-            ) {
-                continue;
-            }
-            $message = $folders__value->query()->whereMessageId($id)->get()->first();
+        try {
+            $sourceFolder = self::findFolderOrFail($client, $folder);
+            $message = $sourceFolder->query()->whereMessageId($id)->get()->first();
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
             $message->setFlag('Seen');
-            break;
+            return true;
+        } finally {
+            $client->disconnect();
         }
-        $client->disconnect();
-        return true;
     }
 
     /**
@@ -641,23 +640,17 @@ class mailhelper
         $cm = new ClientManager();
         $client = $cm->make($settings);
         $client->connect();
-        $folders = $client->getFolders(false);
-        foreach ($folders as $folders__value) {
-            if (
-                $folders__value->full_name !== $folder &&
-                self::decodeImapUtf7($folders__value->full_name) !== $folder
-            ) {
-                continue;
-            }
-            $message = $folders__value->query()->whereMessageId($id)->get()->first();
+        try {
+            $sourceFolder = self::findFolderOrFail($client, $folder);
+            $message = $sourceFolder->query()->whereMessageId($id)->get()->first();
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
             $message->unsetFlag('Seen');
-            break;
+            return true;
+        } finally {
+            $client->disconnect();
         }
-        $client->disconnect();
-        return true;
     }
 
     /**
@@ -683,25 +676,28 @@ class mailhelper
         $cm = new ClientManager();
         $client = $cm->make($settings);
         $client->connect();
-        $folders_raw = $client->getFolders(false);
-        $folders = [];
-        foreach ($folders_raw as $folders_raw__value) {
-            $folders[] = $folders_raw__value->full_name;
+        try {
+            $folders_raw = $client->getFolders(false);
+            $folders = [];
+            foreach ($folders_raw as $folders_raw__value) {
+                $folders[] = $folders_raw__value->full_name;
+            }
+
+            // sort folders alphabetically, but sort "INBOX" first
+            usort($folders, function ($a, $b) {
+                if (mb_strpos($a, 'INBOX') === 0 && mb_strpos($b, 'INBOX') !== 0) {
+                    return -1;
+                }
+                if (mb_strpos($a, 'INBOX') !== 0 && mb_strpos($b, 'INBOX') === 0) {
+                    return 1;
+                }
+                return strnatcasecmp($a, $b);
+            });
+
+            return ['count' => count($folders), 'items' => $folders];
+        } finally {
+            $client->disconnect();
         }
-
-        // sort folders alphabetically, but sort "INBOX" first
-        usort($folders, function ($a, $b) {
-            if (mb_strpos($a, 'INBOX') === 0 && mb_strpos($b, 'INBOX') !== 0) {
-                return -1;
-            }
-            if (mb_strpos($a, 'INBOX') !== 0 && mb_strpos($b, 'INBOX') === 0) {
-                return 1;
-            }
-            return strnatcasecmp($a, $b);
-        });
-
-        $client->disconnect();
-        return ['count' => count($folders), 'items' => $folders];
     }
 
     /**
@@ -724,12 +720,12 @@ class mailhelper
         $cm = new ClientManager();
         $client = $cm->make($settings);
         $client->connect();
-
-        $success = true;
-        $client->createFolder($name, false);
-
-        $client->disconnect();
-        return $success;
+        try {
+            $client->createFolder($name, false);
+            return true;
+        } finally {
+            $client->disconnect();
+        }
     }
 
     /**
@@ -758,27 +754,16 @@ class mailhelper
         $cm = new ClientManager();
         $client = $cm->make($settings);
         $client->connect();
-
-        $success = false;
-        $folders = $client->getFolders(false);
-        foreach ($folders as $folders__value) {
-            if (
-                $folders__value->full_name !== $name_old &&
-                self::decodeImapUtf7($folders__value->full_name) !== $name_old
-            ) {
-                continue;
-            }
-            //$folders__value->move( self::encodeImapUtf7($name_new), false);
+        try {
+            $sourceFolder = self::findFolderOrFail($client, $name_old);
             $client
                 ->getConnection()
-                ->renameFolder(self::encodeImapUtf7($folders__value->full_name), self::encodeImapUtf7($name_new))
+                ->renameFolder(self::encodeImapUtf7($sourceFolder->full_name), self::encodeImapUtf7($name_new))
                 ->validatedData();
-            $success = true;
-            break;
+            return true;
+        } finally {
+            $client->disconnect();
         }
-
-        $client->disconnect();
-        return $success;
     }
 
     /**
@@ -801,20 +786,13 @@ class mailhelper
         $cm = new ClientManager();
         $client = $cm->make($settings);
         $client->connect();
-
-        $success = false;
-        $folders = $client->getFolders(false);
-        foreach ($folders as $folders__value) {
-            if ($folders__value->full_name !== $name && self::decodeImapUtf7($folders__value->full_name) !== $name) {
-                continue;
-            }
-            $folders__value->delete(false);
-            $success = true;
-            break;
+        try {
+            $sourceFolder = self::findFolderOrFail($client, $name);
+            $sourceFolder->delete(false);
+            return true;
+        } finally {
+            $client->disconnect();
         }
-
-        $client->disconnect();
-        return $success;
     }
 
     /**
@@ -828,6 +806,32 @@ class mailhelper
     public function getConfig(): array
     {
         return self::maskSecrets($this->config);
+    }
+
+    // find a folder by full_name (mUTF-7 encoded or decoded) or throw a clear
+    // error message that lists the available folders. used by every method that
+    // operates on a single folder, so that "folder does not exist" never
+    // silently completes with a false-positive return value.
+    private static function findFolderOrFail(
+        \Webklex\PHPIMAP\Client $client,
+        string $folder
+    ): \Webklex\PHPIMAP\Folder {
+        $folders = $client->getFolders(false);
+        $decoded = [];
+        $match = null;
+        foreach ($folders as $folders__value) {
+            $decodedName = self::decodeImapUtf7($folders__value->full_name);
+            $decoded[] = $decodedName;
+            if ($folders__value->full_name === $folder || $decodedName === $folder) {
+                $match = $folders__value;
+            }
+        }
+        if ($match === null) {
+            throw new \Exception(
+                'Folder does not exist: "' . $folder . '". Available folders: ' . implode(', ', $decoded)
+            );
+        }
+        return $match;
     }
 
     // recursively replace values of credential-like keys with '***'. matches any
@@ -932,23 +936,17 @@ class mailhelper
 
         // parse filter
         $filter = [];
-        if (isset($options['filter-date-from'])) {
-            $filter['date_from'] = $options['filter-date-from'];
+        if (isset($options['filter_date_from'])) {
+            $filter['date_from'] = $options['filter_date_from'];
         }
-        if (isset($options['filter-date-until'])) {
-            $filter['date_until'] = $options['filter-date-until'];
+        if (isset($options['filter_date_until'])) {
+            $filter['date_until'] = $options['filter_date_until'];
         }
-        if (isset($options['filter-subject'])) {
-            $filter['subject'] = $options['filter-subject'];
+        if (isset($options['filter_subject'])) {
+            $filter['subject'] = $options['filter_subject'];
         }
-        if (isset($options['filter-content'])) {
-            $filter['content'] = $options['filter-content'];
-        }
-        if (isset($options['filter-to'])) {
-            $filter['to'] = $options['filter-to'];
-        }
-        if (isset($options['filter-cc'])) {
-            $filter['cc'] = $options['filter-cc'];
+        if (isset($options['filter_to'])) {
+            $filter['to'] = $options['filter_to'];
         }
 
         // parse json
@@ -1080,10 +1078,10 @@ class mailhelper
 
     private static function prettyPrint(mixed $data, int $indent = 0): string
     {
-        if ($data === true || $data === '1' || $data === 1) {
+        if ($data === true) {
             return '✅' . "\n";
         }
-        if ($data === false || $data === '0' || $data === 0) {
+        if ($data === false) {
             return '⛔' . "\n";
         }
         $output = '';
@@ -1174,55 +1172,37 @@ class mailhelper
 
     private static function checkFilter(?array $filter, mixed $message): bool
     {
-        if ($filter !== null && !empty($filter)) {
-            if ($filter['date_from'] ?? null) {
-                $date_from = new \DateTime($filter['date_from']);
-                if ($message->getDate()->toDate() <= $date_from) {
-                    return false;
+        if ($filter === null || empty($filter)) {
+            return true;
+        }
+        if ($filter['date_from'] ?? null) {
+            $date_from = (new \DateTime($filter['date_from']))->setTime(0, 0, 0);
+            if ($message->getDate()->toDate() < $date_from) {
+                return false;
+            }
+        }
+        if ($filter['date_until'] ?? null) {
+            $date_until = (new \DateTime($filter['date_until']))->setTime(23, 59, 59);
+            if ($message->getDate()->toDate() > $date_until) {
+                return false;
+            }
+        }
+        if ($filter['subject'] ?? null) {
+            $subject = (string) ($message->getSubject()[0] ?? '');
+            if (stripos($subject, $filter['subject']) === false) {
+                return false;
+            }
+        }
+        if ($filter['to'] ?? null) {
+            $found = false;
+            foreach ($message->getTo() as $to_address) {
+                if (stripos((string) ($to_address->mail ?? ''), $filter['to']) !== false) {
+                    $found = true;
+                    break;
                 }
             }
-            if ($filter['date_until'] ?? null) {
-                $date_until = new \DateTime($filter['date_until']);
-                if ($message->getDate()->toDate() >= $date_until) {
-                    return false;
-                }
-            }
-            if ($filter['subject'] ?? null) {
-                if (stripos($message->getSubject()[0], $filter['subject']) === false) {
-                    return false;
-                }
-            }
-            if ($filter['message'] ?? null) {
-                if (
-                    stripos($message->getTextBody(), $filter['message']) === false &&
-                    stripos($message->getHTMLBody(), $filter['message']) === false
-                ) {
-                    return false;
-                }
-            }
-            if ($filter['to'] ?? null) {
-                $found = false;
-                foreach ($message->getTo() as $to_address) {
-                    if (stripos($to_address->mail, $filter['to']) !== false) {
-                        $found = true;
-                        break;
-                    }
-                }
-                if (!$found) {
-                    return false;
-                }
-            }
-            if ($filter['cc'] ?? null) {
-                $found = false;
-                foreach ($message->getCc() as $to_address) {
-                    if (stripos($to_address->mail, $filter['cc']) !== false) {
-                        $found = true;
-                        break;
-                    }
-                }
-                if (!$found) {
-                    return false;
-                }
+            if (!$found) {
+                return false;
             }
         }
         return true;
@@ -1263,8 +1243,6 @@ class mailhelper
         if (!isset($this->config[$args['mailbox']][$action === 'sendMail' ? 'smtp' : 'imap'])) {
             throw new \Exception('Configuration not found for mailbox: ' . $args['mailbox']);
         }
-        if ($action === 'fetchMails') {
-        }
         if ($action === 'sendMail') {
             if (!($args['subject'] ?? null)) {
                 throw new \Exception('Missing subject.');
@@ -1303,8 +1281,6 @@ class mailhelper
             if (!($args['id'] ?? null)) {
                 throw new \Exception('Missing id.');
             }
-        }
-        if ($action === 'getFolders') {
         }
         if ($action === 'createFolder') {
             if (!($args['name'] ?? null)) {
@@ -1412,9 +1388,7 @@ class mailhelper
 
         $mail->date = $message->getDate()->toDate()->setTimezone(date_default_timezone_get())->format('Y-m-d H:i:s');
 
-        $subject = $message->getSubject()[0] ?? '';
-        $subject = trim($subject);
-        $subject = preg_replace("/\r\n|\r|\n/", '', trim(@$message->getSubject()[0]));
+        $subject = preg_replace("/\r\n|\r|\n/", '', trim((string) ($message->getSubject()[0] ?? '')));
         if (mb_detect_encoding($subject, 'UTF-8, ISO-8859-1') !== 'UTF-8') {
             $subject = self::utf8EncodeLegacy($subject);
         }
