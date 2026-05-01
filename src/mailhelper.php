@@ -413,7 +413,7 @@ class mailhelper
         $client->connect();
         try {
             $sourceFolder = self::findFolderOrFail($client, $folder);
-            $message = $sourceFolder->query()->whereMessageId($id)->get()->first();
+            $message = self::findMessageByMessageId($sourceFolder, $id);
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
@@ -542,7 +542,7 @@ class mailhelper
                 );
             }
 
-            $message = $sourceFolder->query()->whereMessageId($id)->get()->first();
+            $message = self::findMessageByMessageId($sourceFolder, $id);
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
@@ -581,7 +581,7 @@ class mailhelper
         $client->connect();
         try {
             $sourceFolder = self::findFolderOrFail($client, $folder);
-            $message = $sourceFolder->query()->whereMessageId($id)->get()->first();
+            $message = self::findMessageByMessageId($sourceFolder, $id);
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
@@ -614,7 +614,7 @@ class mailhelper
         $client->connect();
         try {
             $sourceFolder = self::findFolderOrFail($client, $folder);
-            $message = $sourceFolder->query()->whereMessageId($id)->get()->first();
+            $message = self::findMessageByMessageId($sourceFolder, $id);
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
@@ -647,7 +647,7 @@ class mailhelper
         $client->connect();
         try {
             $sourceFolder = self::findFolderOrFail($client, $folder);
-            $message = $sourceFolder->query()->whereMessageId($id)->get()->first();
+            $message = self::findMessageByMessageId($sourceFolder, $id);
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
@@ -816,6 +816,37 @@ class mailhelper
     public function getConfig(): array
     {
         return self::maskSecrets($this->config);
+    }
+
+    // find a single message by Message-ID. tries the fast imap-side search
+    // first; if that misses (e.g. because the server's Message-ID index does
+    // not contain the requested value due to a malformed-header mail the
+    // server itself could not parse), fall back to scanning every message in
+    // the folder and matching against the *healed* message_id. the heal cost
+    // is only paid for messages whose webklex-extracted message_id is empty.
+    private static function findMessageByMessageId(
+        \Webklex\PHPIMAP\Folder $folder,
+        string $id
+    ): ?\Webklex\PHPIMAP\Message {
+        $message = $folder->query()->whereMessageId($id)->get()->first();
+        if ($message !== null) {
+            return $message;
+        }
+        $messages = $folder->query()->all()->leaveUnread()->setFetchBody(false)->get();
+        foreach ($messages as $m) {
+            $native = $m->getMessageId()->toString();
+            if ($native === $id) {
+                return $m;
+            }
+            if ($native !== '') {
+                continue;
+            }
+            $healed = self::healCorruptedHeaders($m);
+            if ($healed !== null && ($healed['message_id'] ?? '') === $id) {
+                return $m;
+            }
+        }
+        return null;
     }
 
     // find a folder by full_name (mUTF-7 encoded or decoded) or throw a clear
