@@ -57,16 +57,27 @@ class mailhelper
     public function fetchMails(
         string $mailbox,
         string $folder,
-        #[Schema(
-            type: 'object',
-            properties: [
-                'date_from' => ['type' => 'string', 'format' => 'date', 'description' => 'Inclusive lower date bound (YYYY-MM-DD).'],
-                'date_until' => ['type' => 'string', 'format' => 'date', 'description' => 'Inclusive upper date bound (YYYY-MM-DD).'],
-                'subject' => ['type' => 'string', 'description' => 'Substring that must appear in the subject.'],
-                'to' => ['type' => 'string', 'description' => 'Recipient email address to match.']
-            ],
-            additionalProperties: false
-        )] ?array $filter = null,
+        #[
+            Schema(
+                type: 'object',
+                properties: [
+                    'date_from' => [
+                        'type' => 'string',
+                        'format' => 'date',
+                        'description' => 'Inclusive lower date bound (YYYY-MM-DD).'
+                    ],
+                    'date_until' => [
+                        'type' => 'string',
+                        'format' => 'date',
+                        'description' => 'Inclusive upper date bound (YYYY-MM-DD).'
+                    ],
+                    'subject' => ['type' => 'string', 'description' => 'Substring that must appear in the subject.'],
+                    'to' => ['type' => 'string', 'description' => 'Recipient email address to match.']
+                ],
+                additionalProperties: false
+            )
+        ]
+        ?array $filter = null,
         #[Schema(type: 'integer', minimum: 1)] ?int $limit = 50,
         #[Schema(type: 'string', enum: ['asc', 'desc'])] ?string $order = null
     ): array {
@@ -522,18 +533,12 @@ class mailhelper
             }
             if ($sourceFolder === null) {
                 throw new \Exception(
-                    'Source folder does not exist: "' .
-                        $folder .
-                        '". Available folders: ' .
-                        implode(', ', $decodedOnly)
+                    'Source folder does not exist: "' . $folder . '". Available folders: ' . implode(', ', $decodedOnly)
                 );
             }
             if (!in_array($name, $allNames, true)) {
                 throw new \Exception(
-                    'Target folder does not exist: "' .
-                        $name .
-                        '". Available folders: ' .
-                        implode(', ', $decodedOnly)
+                    'Target folder does not exist: "' . $name . '". Available folders: ' . implode(', ', $decodedOnly)
                 );
             }
 
@@ -802,7 +807,12 @@ class mailhelper
      * password / secret / token / api_key patterns are replaced with '***' so
      * credentials never reach MCP clients or LLM context.
      */
-    #[McpTool(name: 'get_config', description: 'Get the mailhelper configuration (mailbox list + IMAP/SMTP settings). Secrets are masked.')]
+    #[
+        McpTool(
+            name: 'get_config',
+            description: 'Get the mailhelper configuration (mailbox list + IMAP/SMTP settings). Secrets are masked.'
+        )
+    ]
     public function getConfig(): array
     {
         return self::maskSecrets($this->config);
@@ -812,10 +822,8 @@ class mailhelper
     // error message that lists the available folders. used by every method that
     // operates on a single folder, so that "folder does not exist" never
     // silently completes with a false-positive return value.
-    private static function findFolderOrFail(
-        \Webklex\PHPIMAP\Client $client,
-        string $folder
-    ): \Webklex\PHPIMAP\Folder {
+    private static function findFolderOrFail(\Webklex\PHPIMAP\Client $client, string $folder): \Webklex\PHPIMAP\Folder
+    {
         $folders = $client->getFolders(false);
         $decoded = [];
         $match = null;
@@ -1375,6 +1383,11 @@ class mailhelper
         $mail = (object) [];
         $mail->id = $message->getMessageId()->toString();
 
+        $healed = $mail->id === '' ? self::healCorruptedHeaders($message) : null;
+        if ($healed !== null && ($healed['message_id'] ?? '') !== '') {
+            $mail->id = $healed['message_id'];
+        }
+
         foreach (['from' => 'getFrom', 'to' => 'getTo', 'cc' => 'getCc'] as $fields__key => $fields__value) {
             $mail->$fields__key = [];
             $addresses = $message->$fields__value()->toArray();
@@ -1387,8 +1400,19 @@ class mailhelper
         }
 
         $mail->date = $message->getDate()->toDate()->setTimezone(date_default_timezone_get())->format('Y-m-d H:i:s');
+        if ($healed !== null && !empty($healed['date'])) {
+            try {
+                $dt = new \DateTime($healed['date']);
+                $dt->setTimezone(new \DateTimeZone(date_default_timezone_get()));
+                $mail->date = $dt->format('Y-m-d H:i:s');
+            } catch (\Exception $e) {
+            }
+        }
 
         $subject = preg_replace("/\r\n|\r|\n/", '', trim((string) ($message->getSubject()[0] ?? '')));
+        if ($healed !== null && !empty($healed['subject'])) {
+            $subject = $healed['subject'];
+        }
         if (mb_detect_encoding($subject, 'UTF-8, ISO-8859-1') !== 'UTF-8') {
             $subject = self::utf8EncodeLegacy($subject);
         }
@@ -1398,6 +1422,53 @@ class mailhelper
         $mail->seen = !empty($flags) && in_array('Seen', $flags);
 
         return $mail;
+    }
+
+    private static function healCorruptedHeaders(mixed $message): ?array
+    {
+        try {
+            $raw_header = $message->getHeader()->raw ?? '';
+        } catch (\Throwable $e) {
+            return null;
+        }
+        if (!is_string($raw_header) || $raw_header === '') {
+            return null;
+        }
+        try {
+            $raw_body = $message->getRawBody();
+            if ($raw_body === '') {
+                $message->parseBody();
+                $raw_body = $message->getRawBody();
+            }
+        } catch (\Throwable $e) {
+            $raw_body = '';
+        }
+        if (!is_string($raw_body)) {
+            $raw_body = '';
+        }
+        $raw_eml = rtrim($raw_header, "\r\n") . "\r\n\r\n" . ltrim($raw_body, "\r\n");
+        $fixed = preg_replace('/\r\n\r\n(\?=)/', "\r\n \\1", $raw_eml, 1);
+        if ($fixed === null || $fixed === $raw_eml) {
+            return null;
+        }
+        $sep_pos = strpos($fixed, "\r\n\r\n");
+        if ($sep_pos === false) {
+            return null;
+        }
+        $header_block = substr($fixed, 0, $sep_pos);
+        $result = ['message_id' => '', 'date' => '', 'subject' => ''];
+        if (preg_match('/^Message-ID:\s*<?([^>\r\n]+?)>?\s*(?:\r?\n|$)/im', $header_block, $m)) {
+            $result['message_id'] = trim($m[1]);
+        }
+        if (preg_match('/^Date:\s*([^\r\n]+)/im', $header_block, $m)) {
+            $result['date'] = trim($m[1]);
+        }
+        if (preg_match('/^Subject:((?:[^\r\n]|\r?\n[ \t])+)/im', $header_block, $m)) {
+            $subject = preg_replace('/\r?\n[ \t]+/', ' ', trim($m[1]));
+            $decoded = @mb_decode_mimeheader($subject);
+            $result['subject'] = is_string($decoded) && $decoded !== '' ? $decoded : $subject;
+        }
+        return $result;
     }
 
     private static function checkAndFormatAttachment(string $attachment): string
