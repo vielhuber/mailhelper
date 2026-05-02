@@ -118,32 +118,36 @@ class Test extends \PHPUnit\Framework\TestCase
                 }
             }
 
-            // viewMail (default: eml and attachment content are null)
+            // viewMail (default: eml and attachments are written to disk, paths returned)
             $response = $this->mailhelper->viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);
             //$this->log($response);
             $this->assertSame($response->id, $mail_id);
             $this->assertSame($response->subject, $test_subject);
             $this->assertStringContainsString($test_content, $response->content_html);
             $this->assertStringContainsString(strip_tags($test_content), $response->content_plain);
-            $this->assertNull($response->eml);
+            $this->assertIsString($response->eml);
+            $this->assertFileExists($response->eml);
             $this->assertNotEmpty($response->attachments);
-            $this->assertNull($response->attachments[0]->content);
+            $this->assertObjectNotHasProperty('content', $response->attachments[0]);
+            $this->assertIsString($response->attachments[0]->path);
+            $this->assertFileExists($response->attachments[0]->path);
             $this->assertNotNull($response->attachments[0]->mime_type);
             $this->assertIsInt($response->attachments[0]->size);
             $this->assertGreaterThan(0, $response->attachments[0]->size);
             $this->sleep();
 
-            // viewMail with include_eml and include_attachments
+            // viewMail with inline_files=true (eml as data-URI, attachments include both path and content)
             $response = $this->mailhelper->viewMail(
                 mailbox: $mailboxes__value,
                 folder: $folder_inbox,
                 id: $mail_id,
-                include_eml: true,
-                include_attachments: true
+                inline_files: true
             );
-            $this->assertNotNull($response->eml);
+            $this->assertIsString($response->eml);
             $this->assertStringStartsWith('data:message/rfc822;base64,', $response->eml);
             $this->assertNotEmpty($response->attachments);
+            $this->assertIsString($response->attachments[0]->path);
+            $this->assertFileExists($response->attachments[0]->path);
             $this->assertNotNull($response->attachments[0]->content);
             $this->assertStringStartsWith('data:', $response->attachments[0]->content);
             $this->sleep();

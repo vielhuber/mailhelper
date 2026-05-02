@@ -378,33 +378,40 @@ class mailhelper
     }
 
     /**
-     * View a single email with full content and optional attachments/EML.
+     * View a single email with full content, attachment paths and EML path.
      *
-     * Retrieves the complete email including HTML/plain-text body. Optionally includes
-     * the original EML file and attachment contents (as base64 data URIs).
-     * Images embedded via CID are automatically converted to base64.
+     * Retrieves the complete email. By default the raw EML and every attachment
+     * (including inline CID images) are written to disk under a per-message
+     * directory in /tmp and only their filesystem paths are returned — keeping
+     * the response payload small enough that LLM consumers can see the
+     * attachment metadata even when the body is long. CID references inside
+     * `content_html` are rewritten to those filesystem paths so downstream
+     * tools can fetch the image bytes directly when needed.
+     *
+     * The response field order is optimised for LLM consumption: structural
+     * metadata (id, from, to, cc, date, subject) and the attachment list come
+     * BEFORE the (potentially huge) HTML/plain bodies, so an LLM that gets a
+     * truncated view still sees what's available.
+     *
+     * Pass `inline_files=true` to additionally include the raw EML and each
+     * attachment's bytes inline as base64 data URIs (the legacy behaviour) —
+     * useful for callers that need a self-contained payload.
      *
      * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
      * @param string $folder Folder containing the email (required, e.g., 'INBOX')
      * @param string $id Message-ID of the email to retrieve (required)
-     * @param bool $include_eml Whether to include the raw EML as base64 data URI in ->eml (optional, default: false)
-     * @param bool $include_attachments Whether to include attachment contents as base64 data URIs in ->attachments[n]->content (optional, default: false)
-     * @return object Email object with: id, from, to, cc, date, subject, content_html, content_plain, attachments (->name, ->mime_type, ->size, ->content is null unless include_attachments), eml (null unless include_eml)
+     * @param bool $inline_files Also include EML and attachment bytes inline as base64 data URIs (optional, default: false)
+     * @return object Email object with: id, from, to, cc, date, subject, attachments (->name, ->mime_type, ->size, ->path, ->content when inline_files), eml (path string; or data-URI when inline_files), content_html, content_plain, seen
      * @throws \Exception If folder doesn't exist, message ID not found, or connection fails
      */
     #[
         McpTool(
             name: 'view_mail',
-            description: 'Retrieve full email content including HTML body, plain text, and attachment metadata. Use include_eml=true for the raw EML (base64), include_attachments=true for attachment contents (base64).'
+            description: 'Retrieve full email content. By default writes the EML and every attachment to disk under /tmp/mailhelper-output and returns their paths instead of inlining base64 — so attachments stay visible to the caller even when the body is long. Pass inline_files=true to additionally include EML/attachment bytes inline (base64 data URIs). CID image references inside content_html are rewritten to the on-disk paths.'
         )
     ]
-    public function viewMail(
-        string $mailbox,
-        string $folder,
-        string $id,
-        bool $include_eml = false,
-        bool $include_attachments = false
-    ): object {
+    public function viewMail(string $mailbox, string $folder, string $id, bool $inline_files = false): object
+    {
         $this->validateInput('viewMail', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
 
@@ -420,17 +427,77 @@ class mailhelper
 
             $mail = self::getMailDataBasic($message);
 
+            $outBase = sys_get_temp_dir() . '/mailhelper-output';
+            $slot = substr(md5($mailbox . '|' . $mail->id), 0, 16);
+            $outDir = $outBase . '/' . $slot;
+            if (!is_dir($outDir)) {
+                @mkdir($outDir, 0775, true);
+            }
+
+            $rawEml = ($message->getHeader()->raw ?? '') . "\r\n\r\n" . $message->getRawBody();
+            $emlPath = $outDir . '/_message.eml';
+            @file_put_contents($emlPath, $rawEml);
+
+            $attachments_meta = [];
+            $cidToPath = [];
+            $attachments_raw = $message->getAttachments();
+            $idx = 0;
+            foreach ($attachments_raw as $att) {
+                $idx++;
+                $rawName = (string) $att->getFilename();
+                if ($rawName === '') {
+                    $rawName = 'attachment_' . $idx;
+                }
+                $safeName = preg_replace('/[^A-Za-z0-9._-]+/u', '_', $rawName);
+                if ($safeName === '' || $safeName === '.' || $safeName === '..') {
+                    $safeName = 'attachment_' . $idx;
+                }
+                $path = $outDir . '/' . sprintf('%02d_%s', $idx, $safeName);
+                $bytes = $att->getContent();
+                @file_put_contents($path, $bytes);
+
+                $entry = (object) [
+                    'name' => $rawName,
+                    'mime_type' => $att->getContentType(),
+                    'size' => strlen($bytes),
+                    'path' => $path
+                ];
+                if ($inline_files) {
+                    $entry->content = 'data:' . $att->getContentType() . ';base64,' . base64_encode($bytes);
+                }
+                $attachments_meta[] = $entry;
+
+                $cid = (string) $att->getId();
+                if ($cid !== '') {
+                    $cidToPath[$cid] = $path;
+                }
+            }
+            $mail->attachments = $attachments_meta;
+
+            $mail->eml = $inline_files ? 'data:message/rfc822;base64,' . base64_encode($rawEml) : $emlPath;
+
             $body = $message->getHTMLBody();
-            // normalize
             $body = trim($body);
             $body = preg_replace('/\r\n|\r|\n/', "\n", $body);
             $body = preg_replace('/\n\s+/', "\n", $body);
             $body = preg_replace('/\s+/', ' ', $body);
             $body = preg_replace('/\n\n+/', "\n", $body);
+            foreach ($attachments_raw as $att) {
+                $cid = (string) $att->getId();
+                if ($cid === '') {
+                    continue;
+                }
+                $replacement = $inline_files
+                    ? 'data:' . $att->getMimeType() . ';base64,' . base64_encode($att->getContent())
+                    : $cidToPath[$cid] ?? '';
+                if ($replacement === '') {
+                    continue;
+                }
+                $body = str_replace('cid:' . $cid, $replacement, $body);
+            }
             $mail->content_html = $body;
 
             $body = $message->getTextBody();
-            // normalize
             if (empty($body)) {
                 $body = $message->getHTMLBody()
                     ? strip_tags(
@@ -444,42 +511,6 @@ class mailhelper
             $body = preg_replace('/\s+/', ' ', $body);
             $body = preg_replace('/\n\n+/', "\n", $body);
             $mail->content_plain = $body;
-
-            $mail->eml = $include_eml
-                ? 'data:message/rfc822;base64,' .
-                    base64_encode(json_decode(json_encode($message->getHeader()), true)['raw'] . $message->getRawBody())
-                : null;
-
-            $mail->attachments = [];
-            $attachments = $message->getAttachments();
-            if (!empty($attachments)) {
-                foreach ($attachments as $attachments__value) {
-                    $mail->attachments[] = (object) [
-                        'name' => $attachments__value->getFilename(),
-                        'mime_type' => $attachments__value->getContentType(),
-                        'size' => strlen($attachments__value->getContent()),
-                        'content' => $include_attachments
-                            ? 'data:' .
-                                $attachments__value->getContentType() .
-                                ';base64,' .
-                                base64_encode($attachments__value->getContent())
-                            : null
-                    ];
-                }
-            }
-
-            // embed images
-            $attachments = $message->getAttachments();
-            foreach ($attachments as $attachments__value) {
-                $mail->content_html = str_replace(
-                    'cid:' . $attachments__value->getId(),
-                    'data:' .
-                        $attachments__value->getMimeType() .
-                        ';base64,' .
-                        base64_encode($attachments__value->getContent()),
-                    $mail->content_html
-                );
-            }
 
             return $mail;
         } finally {
@@ -1028,8 +1059,8 @@ class mailhelper
                     mailbox: $options['mailbox'] ?? null,
                     folder: $options['folder'] ?? null,
                     id: $options['id'] ?? null,
-                    include_eml: ($options['include_eml'] ?? false) === true,
-                    include_attachments: ($options['include_attachments'] ?? false) === true
+                    // bare boolean flag — presence means true, absence means false
+                    inline_files: isset($options['inline_files'])
                 );
             }
 
