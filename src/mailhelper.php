@@ -206,11 +206,11 @@ class mailhelper
         string $mailbox,
         string $subject,
         string $content,
-        #[Schema(definition: ['type' => ['string']])] string|array $to,
-        #[Schema(definition: ['type' => ['string', 'null']])] string|array|null $cc = null,
-        #[Schema(definition: ['type' => ['string', 'null']])] string|array|null $bcc = null,
-        #[Schema(definition: ['type' => ['string', 'null']])] ?string $from_name = null,
-        #[Schema(definition: ['type' => ['string', 'null']])] string|array|null $attachments = null
+        #[Schema(type: 'string')] string|array $to,
+        #[Schema(type: 'string')] string|array|null $cc = null,
+        #[Schema(type: 'string')] string|array|null $bcc = null,
+        #[Schema(type: 'string')] ?string $from_name = null,
+        #[Schema(type: 'string')] string|array|null $attachments = null
     ): bool {
         $to = self::parseJsonParam($to);
         $cc = self::parseJsonParam($cc);
