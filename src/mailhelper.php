@@ -188,9 +188,9 @@ class mailhelper
      * @param string $mailbox Sender email address (required, must exist in config.json with SMTP settings)
      * @param string $subject Email subject line (required)
      * @param string $content Email body (required, HTML supported, images auto-embedded)
-     * @param string $to Recipient(s): 'email@example.com' or array [{"name": "John", "email": "john@example.com"}] (required)
-     * @param string|null $cc CC recipient(s): same format as $to (optional)
-     * @param string|null $bcc BCC recipient(s): same format as $to (optional)
+     * @param string $to Recipient(s): bare email 'john@example.com', RFC 5322 'John <john@example.com>', comma-separated list, or JSON array [{"name": "John", "email": "john@example.com"}] (required)
+     * @param string|null $cc CC recipient(s), identical format options as $to: bare email, RFC 5322 'Name <email>', comma-separated list, or JSON array (optional)
+     * @param string|null $bcc BCC recipient(s), identical format options as $to: bare email, RFC 5322 'Name <email>', comma-separated list, or JSON array (optional)
      * @param string|null $from_name Sender display name (optional, overrides config if set)
      * @param string|null $attachments File path or array [{"name": "doc.pdf", "file": "/path/to/file.pdf"}] (optional)
      * @return bool True if email was sent successfully
@@ -199,7 +199,7 @@ class mailhelper
     #[
         McpTool(
             name: 'send_mail',
-            description: 'Send an HTML email via SMTP. Recipients as email string or JSON array: [{"name": "John", "email": "john@example.com"}]. Attachments as path or JSON: [{"name": "doc.pdf", "file": "/path/to/file.pdf"}]'
+            description: 'Send an HTML email via SMTP. Recipients accept: bare email "a@b.com", RFC 5322 "Name <a@b.com>", comma-separated list, or JSON array [{"name": "John", "email": "john@example.com"}]. Attachments as path or JSON: [{"name": "doc.pdf", "file": "/path/to/file.pdf"}]'
         )
     ]
     public function sendMail(
@@ -270,7 +270,20 @@ class mailhelper
                 }
                 foreach (${$fields__key} as $recipients__value) {
                     if (is_string($recipients__value) && $recipients__value != '') {
-                        $mail->$fields__value($recipients__value);
+                        // tolerate RFC 5322 "Name <email>" format and comma-separated lists
+                        foreach (preg_split('/\s*,\s*/', $recipients__value, -1, PREG_SPLIT_NO_EMPTY) as $part) {
+                            if (preg_match('/^\s*(.*?)\s*<\s*([^>]+)\s*>\s*$/', $part, $m)) {
+                                $name = trim($m[1], " \t\"'");
+                                $email = trim($m[2]);
+                                if ($email !== '' && $name !== '') {
+                                    $mail->$fields__value($email, $name);
+                                } elseif ($email !== '') {
+                                    $mail->$fields__value($email);
+                                }
+                            } else {
+                                $mail->$fields__value(trim($part));
+                            }
+                        }
                     } elseif (is_array($recipients__value)) {
                         if (
                             isset($recipients__value['email']) &&
