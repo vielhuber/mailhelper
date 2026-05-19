@@ -172,7 +172,8 @@ $mailhelper->fetchMails(
         'date_from' => date('Y-m-d H:i:s', strtotime('now - 1 hour')),
         'date_until' => date('Y-m-d H:i:s', strtotime('now')),
         'subject' => 'pattern',
-        'content' => 'pattern'
+        'content' => 'pattern',
+        'from' => 'pattern',
         'to' => 'pattern',
         'cc' => 'pattern'
     ],

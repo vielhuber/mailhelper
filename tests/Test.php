@@ -110,6 +110,10 @@ class Test extends \PHPUnit\Framework\TestCase
             $response = $this->mailhelper->fetchMails(
                 mailbox: $mailboxes__value,
                 folder: $folder_inbox,
+                filter: [
+                    'date_from' => date('Y-m-d', strtotime('now - 1 day')),
+                    'subject' => 'JOOOOOO This is a test!'
+                ],
                 limit: 10, // don't limit 10, because other mails can income that disturb the test
                 order: 'desc'
             );
@@ -122,6 +126,7 @@ class Test extends \PHPUnit\Framework\TestCase
                     break;
                 }
             }
+            $this->assertNotNull($mail_id);
 
             // viewMail (default: eml and attachments are written to disk, paths returned)
             $response = $this->mailhelper->viewMail(mailbox: $mailboxes__value, folder: $folder_inbox, id: $mail_id);

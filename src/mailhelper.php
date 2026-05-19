@@ -72,7 +72,10 @@ class mailhelper
                         'description' => 'Inclusive upper date bound (YYYY-MM-DD).'
                     ],
                     'subject' => ['type' => 'string', 'description' => 'Substring that must appear in the subject.'],
-                    'to' => ['type' => 'string', 'description' => 'Recipient email address to match.']
+                    'content' => ['type' => 'string', 'description' => 'Substring that must appear in the body.'],
+                    'from' => ['type' => 'string', 'description' => 'Sender email address to match.'],
+                    'to' => ['type' => 'string', 'description' => 'Recipient email address to match.'],
+                    'cc' => ['type' => 'string', 'description' => 'CC email address to match.']
                 ],
                 additionalProperties: false
             )
@@ -91,14 +94,58 @@ class mailhelper
             $order !== null && in_array(mb_strtolower($order), ['asc', 'desc']) ? mb_strtolower($order) : 'desc';
         $fix_order = $this->config[$mailbox]['imap']['fix_order'] ?? false;
 
-        $cm = new ClientManager();
+        $cm = new ClientManager([
+            'date_format' => 'd-M-Y',
+            'options' => [
+                'unescaped_search_dates' => true
+            ]
+        ]);
         $client = $cm->make($settings);
         $client->connect();
         try {
             $sourceFolder = self::findFolderOrFail($client, $folder);
 
             $query = $sourceFolder->query();
-            $query->all();
+            $searchQuery = [['ALL']];
+            if ($filter !== null && !empty($filter)) {
+                $searchQuery = [];
+                $hasUtf8 = false;
+                if ($filter['date_from'] ?? null) {
+                    $searchQuery[] = ['SINCE', (new \DateTime((string) $filter['date_from']))->format('d-M-Y')];
+                }
+                if ($filter['date_until'] ?? null) {
+                    $searchQuery[] = [
+                        'BEFORE',
+                        (new \DateTime((string) $filter['date_until']))->modify('+1 day')->format('d-M-Y')
+                    ];
+                }
+                foreach (
+                    [
+                        'subject' => 'SUBJECT',
+                        'content' => 'BODY',
+                        'from' => 'FROM',
+                        'to' => 'TO',
+                        'cc' => 'CC'
+                    ]
+                    as $filterKey => $criteria
+                ) {
+                    if (!($filter[$filterKey] ?? null)) {
+                        continue;
+                    }
+                    $value = str_replace(['\\', '"'], ['\\\\', '\\"'], (string) $filter[$filterKey]);
+                    if (preg_match('/[^\x00-\x7F]/u', $value) === 1) {
+                        $hasUtf8 = true;
+                    }
+                    $searchQuery[] = [$criteria, $value];
+                }
+                if (empty($searchQuery)) {
+                    $searchQuery = [['ALL']];
+                }
+                if ($hasUtf8) {
+                    array_unshift($searchQuery, ['CHARSET UTF-8']);
+                }
+            }
+            $query->setQuery($searchQuery);
             $query->leaveUnread();
             $query->setFetchBody(false);
 
@@ -122,9 +169,6 @@ class mailhelper
                     $full_count = $paginator->total();
                     $messages = iterator_to_array($paginator);
                     foreach ($messages as $messages__value) {
-                        if (self::checkFilter($filter, $messages__value) === false) {
-                            continue;
-                        }
                         $mail = self::getMailDataBasic($messages__value);
                         $mails[] = $mail;
                         if (self::isCli()) {
@@ -142,9 +186,6 @@ class mailhelper
                 $full_count = $messages->total() ?? $messages->count();
 
                 foreach ($messages as $messages__value) {
-                    if (self::checkFilter($filter, $messages__value) === false) {
-                        continue;
-                    }
                     $mail = self::getMailDataBasic($messages__value);
                     $mails[] = $mail;
                     if (self::isCli()) {
@@ -1031,8 +1072,17 @@ class mailhelper
         if (isset($options['filter_subject'])) {
             $filter['subject'] = $options['filter_subject'];
         }
+        if (isset($options['filter_content'])) {
+            $filter['content'] = $options['filter_content'];
+        }
+        if (isset($options['filter_from'])) {
+            $filter['from'] = $options['filter_from'];
+        }
         if (isset($options['filter_to'])) {
             $filter['to'] = $options['filter_to'];
+        }
+        if (isset($options['filter_cc'])) {
+            $filter['cc'] = $options['filter_cc'];
         }
 
         // parse json
@@ -1255,44 +1305,6 @@ class mailhelper
             return $value; // Return original string if not valid JSON
         }
         return $decoded;
-    }
-
-    private static function checkFilter(?array $filter, mixed $message): bool
-    {
-        if ($filter === null || empty($filter)) {
-            return true;
-        }
-        if ($filter['date_from'] ?? null) {
-            $date_from = (new \DateTime($filter['date_from']))->setTime(0, 0, 0);
-            if ($message->getDate()->toDate() < $date_from) {
-                return false;
-            }
-        }
-        if ($filter['date_until'] ?? null) {
-            $date_until = (new \DateTime($filter['date_until']))->setTime(23, 59, 59);
-            if ($message->getDate()->toDate() > $date_until) {
-                return false;
-            }
-        }
-        if ($filter['subject'] ?? null) {
-            $subject = (string) ($message->getSubject()[0] ?? '');
-            if (stripos($subject, $filter['subject']) === false) {
-                return false;
-            }
-        }
-        if ($filter['to'] ?? null) {
-            $found = false;
-            foreach ($message->getTo() as $to_address) {
-                if (stripos((string) ($to_address->mail ?? ''), $filter['to']) !== false) {
-                    $found = true;
-                    break;
-                }
-            }
-            if (!$found) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static function progress(
