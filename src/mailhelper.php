@@ -1672,6 +1672,6 @@ class mailhelper
     }
 }
 
-if (mailhelper::isCli()) {
+if (mailhelper::isCli() && basename((string) ($_SERVER['argv'][0] ?? '')) === 'mailhelper.php') {
     mailhelper::parseCli();
 }
