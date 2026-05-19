@@ -83,7 +83,12 @@ class Test extends \PHPUnit\Framework\TestCase
             //$this->log($this->mailhelper->getFolders(mailbox: $mailboxes__value));
 
             $test_subject = 'JOOOOOO This is a test! 🚀 ' . mt_rand(1000, 9999);
-            $test_content = '✅ Test <strong>successful</strong>! ' . mt_rand(1000, 9999);
+            $test_content =
+                '✅ Test <strong>successful</strong>! ' .
+                mt_rand(1000, 9999) .
+                '<br><img src="' .
+                __DIR__ .
+                '/test.jpg" alt="Test">';
 
             // sendMail
             $response = $this->mailhelper->sendMail(

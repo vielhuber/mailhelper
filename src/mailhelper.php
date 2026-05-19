@@ -182,12 +182,12 @@ class mailhelper
      * Send an email via SMTP.
      *
      * Sends an HTML email with optional attachments through the configured SMTP server.
-     * Supports multiple recipients (To, CC, BCC), embedded images (base64 or relative paths),
+     * Supports multiple recipients (To, CC, BCC), embedded images,
      * and file attachments. Automatically generates a plain-text alternative body if none is provided.
      *
      * @param string $mailbox Sender email address (required, must exist in config.json with SMTP settings)
      * @param string $subject Email subject line (required)
-     * @param string $content Email body (required, HTML supported, images auto-embedded)
+     * @param string $content Email body (required, HTML supported)
      * @param string $to Recipient(s): bare email 'john@example.com', RFC 5322 'John <john@example.com>', comma-separated list, or JSON array [{"name": "John", "email": "john@example.com"}] (required)
      * @param string|null $cc CC recipient(s), identical format options as $to: bare email, RFC 5322 'Name <email>', comma-separated list, or JSON array (optional)
      * @param string|null $bcc BCC recipient(s), identical format options as $to: bare email, RFC 5322 'Name <email>', comma-separated list, or JSON array (optional)
@@ -200,7 +200,7 @@ class mailhelper
     #[
         McpTool(
             name: 'send_mail',
-            description: 'Send an HTML email via SMTP. Recipients accept: bare email "a@b.com", RFC 5322 "Name <a@b.com>", comma-separated list, or JSON array [{"name": "John", "email": "john@example.com"}]. Attachments as path or JSON: [{"name": "doc.pdf", "file": "/path/to/file.pdf"}]. content_plain can override the generated plain-text alternative body.'
+            description: 'Send an HTML email via SMTP. Recipients accept: bare email "a@b.com", RFC 5322 "Name <a@b.com>", comma-separated list, or JSON array [{"name": "John", "email": "john@example.com"}]. Attachments as path or JSON: [{"name": "doc.pdf", "file": "/path/to/file.pdf"}]. HTML images are embedded automatically. content_plain can override the generated plain-text alternative body.'
         )
     ]
     public function sendMail(
@@ -301,48 +301,49 @@ class mailhelper
                 }
             }
 
-            // embed images (base64 and relative urls to cid)
             $images = [];
             preg_match_all('/src="([^"]*)"/i', $content, $images);
-            $images = $images[1];
-            $images = array_unique($images);
+            $images = array_unique($images[1]);
             foreach ($images as $images__value) {
-                if (strpos($images__value, 'cid:') === false && strpos($images__value, 'http') === false) {
-                    $image_cid = md5($images__value);
+                if (strpos($images__value, 'cid:') !== false || strpos($images__value, 'http') === 0) {
+                    continue;
+                }
+                $is_absolute_local_image =
+                    (strpos($images__value, '/') === 0 || preg_match('/^[A-Za-z]:[\\\\\\/]/', $images__value) === 1) &&
+                    file_exists($images__value);
+                $image_cid = md5($images__value);
 
-                    $image_extension = $images__value;
-                    if (strpos($images__value, 'base64,') !== false) {
-                        if (strpos($images__value, 'image/png') !== false) {
-                            $image_extension = 'png';
-                        } else {
-                            $image_extension = 'jpg';
-                        }
+                $image_extension = $images__value;
+                if (strpos($images__value, 'base64,') !== false) {
+                    if (strpos($images__value, 'image/png') !== false) {
+                        $image_extension = 'png';
                     } else {
-                        $image_extension = explode('.', $image_extension);
-                        $image_extension = $image_extension[count($image_extension) - 1];
+                        $image_extension = 'jpg';
                     }
+                } else {
+                    $image_extension = explode('.', $image_extension);
+                    $image_extension = $image_extension[count($image_extension) - 1];
+                }
 
-                    $image_baseurl = $_SERVER['DOCUMENT_ROOT']; // modify this if needed
+                $image_baseurl = $_SERVER['DOCUMENT_ROOT'] ?? '';
 
-                    $image_tmp_path = sys_get_temp_dir() . '/' . md5(uniqid()) . '.' . $image_extension;
+                $image_tmp_path = sys_get_temp_dir() . '/' . md5(uniqid()) . '.' . $image_extension;
 
-                    // base64
-                    if (strpos($images__value, 'base64,') !== false) {
-                        file_put_contents(
-                            $image_tmp_path,
-                            base64_decode(
-                                trim(substr($images__value, strpos($images__value, 'base64,') + strlen('base64')))
-                            )
-                        );
-                        $content = str_replace($images__value, 'cid:' . $image_cid, $content);
-                        $mail->addEmbeddedImage($image_tmp_path, $image_cid);
-                    }
-
-                    // relative paths
-                    elseif (file_exists($image_baseurl . '/' . $images__value)) {
-                        $content = str_replace($images__value, 'cid:' . $image_cid, $content);
-                        $mail->addEmbeddedImage($image_baseurl . '/' . $images__value, $image_cid);
-                    }
+                if (strpos($images__value, 'base64,') !== false) {
+                    file_put_contents(
+                        $image_tmp_path,
+                        base64_decode(
+                            trim(substr($images__value, strpos($images__value, 'base64,') + strlen('base64')))
+                        )
+                    );
+                    $content = str_replace($images__value, 'cid:' . $image_cid, $content);
+                    $mail->addEmbeddedImage($image_tmp_path, $image_cid);
+                } elseif ($is_absolute_local_image === true) {
+                    $content = str_replace($images__value, 'cid:' . $image_cid, $content);
+                    $mail->addEmbeddedImage($images__value, $image_cid);
+                } elseif (file_exists($image_baseurl . '/' . $images__value)) {
+                    $content = str_replace($images__value, 'cid:' . $image_cid, $content);
+                    $mail->addEmbeddedImage($image_baseurl . '/' . $images__value, $image_cid);
                 }
             }
 
