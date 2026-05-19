@@ -100,15 +100,16 @@ vi config.json
     --mailbox "xxx@tld.com" \
     --subject "This is a test! 🚀" \
     --content "✅ Test <strong>successful</strong>!" \
-    --from-name "John Doe"
+    --content-plain "Test successful!" \
+    --from-name "John Doe" \
     --to "aaa@tld.com" \
     --to '["aaa@tld.com", "bbb@tld.com"]' \
     --to '[{"name": "John Doe", "email": "aaa@tld.com"}, {"name": "Jane Doe", "email": "bbb@tld.com"}]' \
     --cc "aaa@tld.com" \
     --bcc "aaa@tld.com" \
-    --attachments: "/test1.jpg" \
-    --attachments: '["/test1.jpg", "/test2.jpg"]' \
-    --attachments: '[{"name": "foo1.jpg", "file": "/test1.jpg"}, {"name": "foo2.jpg", "file": "/test2.jpg"}]'
+    --attachments "/test1.jpg" \
+    --attachments '["/test1.jpg", "/test2.jpg"]' \
+    --attachments '[{"name": "foo1.jpg", "file": "/test1.jpg"}, {"name": "foo2.jpg", "file": "/test2.jpg"}]'
 
 ./vendor/bin/mailhelper.php view-mail \
     --mailbox "xxx@tld.com" \
@@ -183,6 +184,7 @@ $mailhelper->sendMail(
     mailbox: 'xxx@tld.com',
     subject: 'This is a test! 🚀',
     content: '✅ Test <strong>successful</strong>!',
+    content_plain: 'Test successful!',
     to: 'aaa@tld.com',
     to: ['aaa@tld.com', 'bbb@tld.com'],
     to: [['name' => 'John Doe', 'email' => 'aaa@tld.com'], ['name' => 'Jane Doe', 'email' => 'bbb@tld.com']],

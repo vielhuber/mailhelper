@@ -183,7 +183,7 @@ class mailhelper
      *
      * Sends an HTML email with optional attachments through the configured SMTP server.
      * Supports multiple recipients (To, CC, BCC), embedded images (base64 or relative paths),
-     * and file attachments. Automatically generates a plain-text alternative body.
+     * and file attachments. Automatically generates a plain-text alternative body if none is provided.
      *
      * @param string $mailbox Sender email address (required, must exist in config.json with SMTP settings)
      * @param string $subject Email subject line (required)
@@ -193,13 +193,14 @@ class mailhelper
      * @param string|null $bcc BCC recipient(s), identical format options as $to: bare email, RFC 5322 'Name <email>', comma-separated list, or JSON array (optional)
      * @param string|null $from_name Sender display name (optional, overrides config if set)
      * @param string|null $attachments File path or array [{"name": "doc.pdf", "file": "/path/to/file.pdf"}] (optional)
+     * @param string|null $content_plain Plain-text alternative body (optional, generated from HTML content if omitted)
      * @return bool True if email was sent successfully
      * @throws \Exception If SMTP connection fails or sending fails
      */
     #[
         McpTool(
             name: 'send_mail',
-            description: 'Send an HTML email via SMTP. Recipients accept: bare email "a@b.com", RFC 5322 "Name <a@b.com>", comma-separated list, or JSON array [{"name": "John", "email": "john@example.com"}]. Attachments as path or JSON: [{"name": "doc.pdf", "file": "/path/to/file.pdf"}]'
+            description: 'Send an HTML email via SMTP. Recipients accept: bare email "a@b.com", RFC 5322 "Name <a@b.com>", comma-separated list, or JSON array [{"name": "John", "email": "john@example.com"}]. Attachments as path or JSON: [{"name": "doc.pdf", "file": "/path/to/file.pdf"}]. content_plain can override the generated plain-text alternative body.'
         )
     ]
     public function sendMail(
@@ -210,7 +211,8 @@ class mailhelper
         #[Schema(type: 'string')] string|array|null $cc = null,
         #[Schema(type: 'string')] string|array|null $bcc = null,
         #[Schema(type: 'string')] ?string $from_name = null,
-        #[Schema(type: 'string')] string|array|null $attachments = null
+        #[Schema(type: 'string')] string|array|null $attachments = null,
+        #[Schema(type: 'string')] ?string $content_plain = null
     ): bool {
         $to = self::parseJsonParam($to);
         $cc = self::parseJsonParam($cc);
@@ -346,7 +348,7 @@ class mailhelper
 
             $mail->Subject = $subject;
             $mail->Body = $content;
-            $mail->AltBody = strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\r\n", $content));
+            $mail->AltBody = $content_plain ?? strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\r\n", $content));
             if ($attachments !== null) {
                 if (!is_array($attachments) || isset($attachments['file'])) {
                     $attachments = [$attachments];
@@ -1063,7 +1065,8 @@ class mailhelper
                     cc: $cc ?? null,
                     bcc: $bcc ?? null,
                     from_name: $options['from_name'] ?? null,
-                    attachments: $attachments ?? null
+                    attachments: $attachments ?? null,
+                    content_plain: $options['content_plain'] ?? null
                 );
             }
 
