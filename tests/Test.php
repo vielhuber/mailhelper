@@ -128,7 +128,12 @@ class Test extends \PHPUnit\Framework\TestCase
             //$this->log($response);
             $this->assertSame($response->id, $mail_id);
             $this->assertSame($response->subject, $test_subject);
-            $this->assertStringContainsString($test_content, $response->content_html);
+            $this->assertStringContainsString('✅ Test <strong>successful</strong>!', $response->content_html);
+            $this->assertMatchesRegularExpression(
+                '/<img src="' . preg_quote(sys_get_temp_dir(), '/') . '\/mailhelper-output\/[^"]+" alt="Test">/',
+                $response->content_html
+            );
+            $this->assertStringNotContainsString(__DIR__ . '/test.jpg', $response->content_html);
             $this->assertStringContainsString(strip_tags($test_content), $response->content_plain);
             $this->assertIsString($response->eml);
             $this->assertFileExists($response->eml);
