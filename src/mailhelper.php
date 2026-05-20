@@ -485,7 +485,7 @@ class mailhelper
             $mail = self::getMailDataBasic($message);
 
             $outBase = sys_get_temp_dir() . '/mailhelper-output';
-            $slot = substr(md5($mailbox . '|' . $mail->id), 0, 16);
+            $slot = substr(md5($mailbox . '|' . ($mail->id !== '' ? $mail->id : $mail->uid)), 0, 16);
             $outDir = $outBase . '/' . $slot;
             if (!is_dir($outDir)) {
                 @mkdir($outDir, 0775, true);
@@ -1528,7 +1528,7 @@ class mailhelper
             $mail->id = $healed['message_id'];
         }
 
-        foreach (['from' => 'getFrom', 'to' => 'getTo', 'cc' => 'getCc'] as $fields__key => $fields__value) {
+        foreach (['from' => 'getFrom', 'to' => 'getTo', 'cc' => 'getCc', 'bcc' => 'getBcc'] as $fields__key => $fields__value) {
             $mail->$fields__key = [];
             $addresses = $message->$fields__value()->toArray();
             foreach ($addresses as $addresses__value) {
