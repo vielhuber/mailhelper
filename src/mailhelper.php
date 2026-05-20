@@ -950,6 +950,15 @@ class mailhelper
         \Webklex\PHPIMAP\Folder $folder,
         string $id
     ): ?\Webklex\PHPIMAP\Message {
+        if (str_starts_with($id, 'uid:')) {
+            return $folder
+                ->query()
+                ->whereUid((int) substr($id, 4))
+                ->leaveUnread()
+                ->setFetchBody(false)
+                ->get()
+                ->first();
+        }
         $message = $folder->query()->whereMessageId($id)->leaveUnread()->get()->first();
         if ($message !== null) {
             return $message;
@@ -1511,6 +1520,7 @@ class mailhelper
     private static function getMailDataBasic(mixed $message): object
     {
         $mail = (object) [];
+        $mail->uid = (string) $message->uid;
         $mail->id = $message->getMessageId()->toString();
 
         $healed = $mail->id === '' ? self::healCorruptedHeaders($message) : null;
