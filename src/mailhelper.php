@@ -916,7 +916,7 @@ class mailhelper
         \Webklex\PHPIMAP\Folder $folder,
         string $id
     ): ?\Webklex\PHPIMAP\Message {
-        $message = $folder->query()->whereMessageId($id)->get()->first();
+        $message = $folder->query()->whereMessageId($id)->leaveUnread()->get()->first();
         if ($message !== null) {
             return $message;
         }
