@@ -141,6 +141,9 @@ vi config.json
 ./vendor/bin/mailhelper.php get-folders \
     --mailbox "xxx@tld.com"
 
+./vendor/bin/mailhelper.php quota \
+    --mailbox "xxx@tld.com"
+
 ./vendor/bin/mailhelper.php create-folder \
     --mailbox "xxx@tld.com"
     --name "INBOX/foo"
@@ -233,6 +236,10 @@ $mailhelper->unreadMail(
 );
 
 $mailhelper->getFolders(
+    mailbox: 'xxx@tld.com'
+);
+
+$mailhelper->quota(
     mailbox: 'xxx@tld.com'
 );
 

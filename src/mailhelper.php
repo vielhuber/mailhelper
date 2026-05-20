@@ -747,6 +747,40 @@ class mailhelper
     }
 
     /**
+     * Get mailbox quota information.
+     *
+     * Returns usage, limit and ratio values from the IMAP STORAGE quota.
+     *
+     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
+     */
+    #[McpTool(name: 'quota', description: 'Get mailbox quota information. Returns usage, limit and ratio.')]
+    public function quota(string $mailbox): array
+    {
+        $this->validateInput('quota', get_defined_vars());
+        $settings = $this->setupSettings($mailbox);
+
+        $cm = new ClientManager();
+        $client = $cm->make($settings);
+        $client->connect();
+        try {
+            $quota = $client->getQuotaRoot('INBOX');
+            $items = new \RecursiveIteratorIterator(new \RecursiveArrayIterator($quota));
+            $values = iterator_to_array($items, false);
+            foreach ($values as $index => $value) {
+                if (mb_strtoupper((string) $value) !== 'STORAGE') {
+                    continue;
+                }
+                $used = (float) ($values[$index + 1] ?? 0);
+                $limit = (float) ($values[$index + 2] ?? 0);
+                return ['usage' => $used, 'limit' => $limit, 'ratio' => $limit > 0 ? $used / $limit : 0];
+            }
+            return ['usage' => 0, 'limit' => 0, 'ratio' => 0];
+        } finally {
+            $client->disconnect();
+        }
+    }
+
+    /**
      * List all folders in a mailbox.
      *
      * Returns an envelope with `count` and `items` (folder names). INBOX and
@@ -1030,6 +1064,7 @@ class mailhelper
             'create-folder',
             'rename-folder',
             'delete-folder',
+            'quota',
             'get-config'
         ];
         if (
@@ -1166,6 +1201,10 @@ class mailhelper
 
             if ($action === 'get-folders') {
                 $response = $mailhelper->getFolders(mailbox: $options['mailbox'] ?? null);
+            }
+
+            if ($action === 'quota') {
+                $response = $mailhelper->quota(mailbox: $options['mailbox'] ?? null);
             }
 
             if ($action === 'create-folder') {
