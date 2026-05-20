@@ -477,7 +477,7 @@ class mailhelper
         $client->connect();
         try {
             $sourceFolder = self::findFolderOrFail($client, $folder);
-            $message = self::findMessageByMessageId($sourceFolder, $id);
+            $message = self::findMessageByMessageId($sourceFolder, $id, true);
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
@@ -948,18 +948,35 @@ class mailhelper
     // is only paid for messages whose webklex-extracted message_id is empty.
     private static function findMessageByMessageId(
         \Webklex\PHPIMAP\Folder $folder,
-        string $id
+        string $id,
+        bool $fetchBody = false
     ): ?\Webklex\PHPIMAP\Message {
-        if (str_starts_with($id, 'uid:')) {
+        $loadFullMessage = function (\Webklex\PHPIMAP\Message $message) use ($folder, $fetchBody): \Webklex\PHPIMAP\Message {
+            if (!$fetchBody) {
+                return $message;
+            }
             return $folder
                 ->query()
-                ->whereUid((int) substr($id, 4))
+                ->whereUid((int) $message->uid)
                 ->leaveUnread()
-                ->setFetchBody(false)
                 ->get()
-                ->first();
+                ->first() ?: $message;
+        };
+        if (str_starts_with($id, 'uid:')) {
+            $query = $folder
+                ->query()
+                ->whereUid((int) substr($id, 4))
+                ->leaveUnread();
+            if (!$fetchBody) {
+                $query->setFetchBody(false);
+            }
+            return $query->get()->first();
         }
-        $message = $folder->query()->whereMessageId($id)->leaveUnread()->get()->first();
+        $query = $folder->query()->whereMessageId($id)->leaveUnread();
+        if (!$fetchBody) {
+            $query->setFetchBody(false);
+        }
+        $message = $query->get()->first();
         if ($message !== null) {
             return $message;
         }
@@ -967,14 +984,14 @@ class mailhelper
         foreach ($messages as $m) {
             $native = $m->getMessageId()->toString();
             if ($native === $id) {
-                return $m;
+                return $loadFullMessage($m);
             }
             if ($native !== '') {
                 continue;
             }
             $healed = self::healCorruptedHeaders($m);
             if ($healed !== null && ($healed['message_id'] ?? '') === $id) {
-                return $m;
+                return $loadFullMessage($m);
             }
         }
         return null;
