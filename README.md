@@ -112,6 +112,14 @@ vi config.json
     --attachments '["/test1.jpg", "/test2.jpg"]' \
     --attachments '[{"name": "foo1.jpg", "file": "/test1.jpg"}, {"name": "foo2.jpg", "file": "/test2.jpg"}]'
 
+./vendor/bin/mailhelper.php save-draft \
+    --mailbox "xxx@tld.com" \
+    # ... (see send-mail)
+
+./vendor/bin/mailhelper.php send-draft \
+    --mailbox "xxx@tld.com" \
+    --id "xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+
 ./vendor/bin/mailhelper.php view-mail \
     --mailbox "xxx@tld.com" \
     --folder "INBOX/foo/bar" \
@@ -203,6 +211,16 @@ $mailhelper->sendMail(
         ['name' => 'foo1.jpg', 'file' => __DIR__ . '/test1.jpg'],
         ['name' => 'foo2.jpg', 'file' => __DIR__ . '/test2.jpg']
     ]
+);
+
+$mailhelper->saveDraft(
+    mailbox: 'xxx@tld.com',
+    // ... (see sendMail)
+);
+
+$mailhelper->sendDraft(
+    mailbox: 'xxx@tld.com',
+    id: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 );
 
 $mailhelper->viewMail(

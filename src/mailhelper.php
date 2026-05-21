@@ -264,170 +264,8 @@ class mailhelper
         $attachments = self::parseJsonParam($attachments);
         $this->validateInput('sendMail', get_defined_vars());
 
-        $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+        $mail = $this->buildMessage($mailbox, $subject, $content, $to, $cc, $bcc, $from_name, $attachments, $content_plain);
         try {
-            $mail->isSMTP();
-            $mail->Host = $this->config[$mailbox]['smtp']['host'] ?? null;
-            $mail->Port = $this->config[$mailbox]['smtp']['port'] ?? null;
-            $mail->SMTPSecure = $this->config[$mailbox]['smtp']['encryption'] ?? null;
-            $mail->setFrom($mailbox, $from_name ?? '');
-            $mail->SMTPAuth = true;
-            $mail->CharSet = 'utf-8';
-            $mail->isHTML(true);
-            $mail->SMTPOptions = [
-                'tls' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true],
-                'ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true]
-            ];
-
-            if ($this->config[$mailbox]['smtp']['tenant_id'] ?? null) {
-                $mail->AuthType = 'XOAUTH2';
-                $mail->setOAuth(
-                    new class (
-                        $mailbox,
-                        $this->getMicrosoftOAuthToken(
-                            $this->config[$mailbox]['smtp']['tenant_id'],
-                            $this->config[$mailbox]['smtp']['client_id'],
-                            $this->config[$mailbox]['smtp']['client_secret']
-                        )
-                    ) implements \PHPMailer\PHPMailer\OAuthTokenProvider {
-                        private string $userEmail;
-                        private string $accessToken;
-                        public function __construct(string $userEmail, string $accessToken)
-                        {
-                            $this->userEmail = $userEmail;
-                            $this->accessToken = $accessToken;
-                        }
-                        public function getOauth64(): string
-                        {
-                            return base64_encode(
-                                'user=' . $this->userEmail . "\001auth=Bearer " . $this->accessToken . "\001\001"
-                            );
-                        }
-                    }
-                );
-            } else {
-                $mail->Username = $this->config[$mailbox]['smtp']['username'] ?? null;
-                $mail->Password = $this->config[$mailbox]['smtp']['password'] ?? null;
-            }
-
-            foreach (['to' => 'addAddress', 'cc' => 'addCC', 'bcc' => 'addBCC'] as $fields__key => $fields__value) {
-                if (!is_array(${$fields__key}) || isset(${$fields__key}['email'])) {
-                    ${$fields__key} = [${$fields__key}];
-                }
-                foreach (${$fields__key} as $recipients__value) {
-                    if (is_string($recipients__value) && $recipients__value != '') {
-                        // tolerate RFC 5322 "Name <email>" format and comma-separated lists
-                        foreach (preg_split('/\s*,\s*/', $recipients__value, -1, PREG_SPLIT_NO_EMPTY) as $part) {
-                            if (preg_match('/^\s*(.*?)\s*<\s*([^>]+)\s*>\s*$/', $part, $m)) {
-                                $name = trim($m[1], " \t\"'");
-                                $email = trim($m[2]);
-                                if ($email !== '' && $name !== '') {
-                                    $mail->$fields__value($email, $name);
-                                } elseif ($email !== '') {
-                                    $mail->$fields__value($email);
-                                }
-                            } else {
-                                $mail->$fields__value(trim($part));
-                            }
-                        }
-                    } elseif (is_array($recipients__value)) {
-                        if (
-                            isset($recipients__value['email']) &&
-                            $recipients__value['email'] != '' &&
-                            isset($recipients__value['name']) &&
-                            $recipients__value['name'] != ''
-                        ) {
-                            $mail->$fields__value($recipients__value['email'], $recipients__value['name']);
-                        } elseif (isset($recipients__value['email']) && $recipients__value['email'] != '') {
-                            $mail->$fields__value($recipients__value['email']);
-                        }
-                    }
-                }
-            }
-
-            $images = [];
-            preg_match_all('/src="([^"]*)"/i', $content, $images);
-            $images = array_unique($images[1]);
-            foreach ($images as $images__value) {
-                if (strpos($images__value, 'cid:') !== false || strpos($images__value, 'http') === 0) {
-                    continue;
-                }
-                $is_absolute_local_image =
-                    (strpos($images__value, '/') === 0 || preg_match('/^[A-Za-z]:[\\\\\\/]/', $images__value) === 1) &&
-                    file_exists($images__value);
-                $image_cid = md5($images__value);
-
-                $image_extension = $images__value;
-                if (strpos($images__value, 'base64,') !== false) {
-                    if (strpos($images__value, 'image/png') !== false) {
-                        $image_extension = 'png';
-                    } else {
-                        $image_extension = 'jpg';
-                    }
-                } else {
-                    $image_extension = explode('.', $image_extension);
-                    $image_extension = $image_extension[count($image_extension) - 1];
-                }
-
-                $image_baseurl = $_SERVER['DOCUMENT_ROOT'] ?? '';
-
-                $image_tmp_path = sys_get_temp_dir() . '/' . md5(uniqid()) . '.' . $image_extension;
-
-                if (strpos($images__value, 'base64,') !== false) {
-                    file_put_contents(
-                        $image_tmp_path,
-                        base64_decode(
-                            trim(substr($images__value, strpos($images__value, 'base64,') + strlen('base64')))
-                        )
-                    );
-                    $content = str_replace($images__value, 'cid:' . $image_cid, $content);
-                    $mail->addEmbeddedImage($image_tmp_path, $image_cid);
-                } elseif ($is_absolute_local_image === true) {
-                    $content = str_replace($images__value, 'cid:' . $image_cid, $content);
-                    $mail->addEmbeddedImage($images__value, $image_cid);
-                } elseif (file_exists($image_baseurl . '/' . $images__value)) {
-                    $content = str_replace($images__value, 'cid:' . $image_cid, $content);
-                    $mail->addEmbeddedImage($image_baseurl . '/' . $images__value, $image_cid);
-                }
-            }
-
-            $mail->Subject = $subject;
-            $mail->Body = $content;
-            $mail->AltBody = $content_plain ?? strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\r\n", $content));
-            if ($attachments !== null) {
-                if (!is_array($attachments) || isset($attachments['file'])) {
-                    $attachments = [$attachments];
-                }
-                if (!empty($attachments)) {
-                    foreach ($attachments as $attachments__value) {
-                        if (is_string($attachments__value) && $attachments__value != '') {
-                            $attachments__value = self::checkAndFormatAttachment($attachments__value);
-                            $mail->addAttachment($attachments__value);
-                        } elseif (is_array($attachments__value)) {
-                            if (
-                                isset($attachments__value['file']) &&
-                                $attachments__value['file'] != '' &&
-                                isset($attachments__value['name']) &&
-                                $attachments__value['name'] != ''
-                            ) {
-                                $attachments__value['file'] = self::checkAndFormatAttachment(
-                                    $attachments__value['file']
-                                );
-                                $mail->addAttachment($attachments__value['file'], $attachments__value['name']);
-                            } elseif (
-                                isset($attachments__value['file']) &&
-                                $attachments__value['file'] != '' &&
-                                file_exists($attachments__value['file'])
-                            ) {
-                                $attachments__value['file'] = self::checkAndFormatAttachment(
-                                    $attachments__value['file']
-                                );
-                                $mail->addAttachment($attachments__value['file']);
-                            }
-                        }
-                    }
-                }
-            }
             $mail->send();
             return true;
         } catch (\Exception $e) {
@@ -435,6 +273,375 @@ class mailhelper
                 'Message could not be sent. (' . $e->getMessage() . ') - Mailer Error: ' . ($mail->ErrorInfo ?? '-')
             );
         }
+    }
+
+    private function buildMessage(
+        string $mailbox,
+        string $subject,
+        string $content,
+        string|array $to,
+        string|array|null $cc = null,
+        string|array|null $bcc = null,
+        ?string $from_name = null,
+        string|array|null $attachments = null,
+        ?string $content_plain = null
+    ): \PHPMailer\PHPMailer\PHPMailer {
+        $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+        $mail->isSMTP();
+        $mail->Host = $this->config[$mailbox]['smtp']['host'] ?? null;
+        $mail->Port = $this->config[$mailbox]['smtp']['port'] ?? null;
+        $mail->SMTPSecure = $this->config[$mailbox]['smtp']['encryption'] ?? null;
+        $mail->setFrom($mailbox, $from_name ?? '');
+        $mail->SMTPAuth = true;
+        $mail->CharSet = 'utf-8';
+        $mail->isHTML(true);
+        $mail->SMTPOptions = [
+            'tls' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true],
+            'ssl' => ['verify_peer' => false, 'verify_peer_name' => false, 'allow_self_signed' => true]
+        ];
+
+        if ($this->config[$mailbox]['smtp']['tenant_id'] ?? null) {
+            $mail->AuthType = 'XOAUTH2';
+            $mail->setOAuth(
+                new class (
+                    $mailbox,
+                    $this->getMicrosoftOAuthToken(
+                        $this->config[$mailbox]['smtp']['tenant_id'],
+                        $this->config[$mailbox]['smtp']['client_id'],
+                        $this->config[$mailbox]['smtp']['client_secret']
+                    )
+                ) implements \PHPMailer\PHPMailer\OAuthTokenProvider {
+                    private string $userEmail;
+                    private string $accessToken;
+                    public function __construct(string $userEmail, string $accessToken)
+                    {
+                        $this->userEmail = $userEmail;
+                        $this->accessToken = $accessToken;
+                    }
+                    public function getOauth64(): string
+                    {
+                        return base64_encode(
+                            'user=' . $this->userEmail . "\001auth=Bearer " . $this->accessToken . "\001\001"
+                        );
+                    }
+                }
+            );
+        } else {
+            $mail->Username = $this->config[$mailbox]['smtp']['username'] ?? null;
+            $mail->Password = $this->config[$mailbox]['smtp']['password'] ?? null;
+        }
+
+        foreach (['to' => 'addAddress', 'cc' => 'addCC', 'bcc' => 'addBCC'] as $fields__key => $fields__value) {
+            if (!is_array(${$fields__key}) || isset(${$fields__key}['email'])) {
+                ${$fields__key} = [${$fields__key}];
+            }
+            foreach (${$fields__key} as $recipients__value) {
+                if (is_string($recipients__value) && $recipients__value != '') {
+                    // tolerate RFC 5322 "Name <email>" format and comma-separated lists
+                    foreach (preg_split('/\s*,\s*/', $recipients__value, -1, PREG_SPLIT_NO_EMPTY) as $part) {
+                        if (preg_match('/^\s*(.*?)\s*<\s*([^>]+)\s*>\s*$/', $part, $m)) {
+                            $name = trim($m[1], " \t\"'");
+                            $email = trim($m[2]);
+                            if ($email !== '' && $name !== '') {
+                                $mail->$fields__value($email, $name);
+                            } elseif ($email !== '') {
+                                $mail->$fields__value($email);
+                            }
+                        } else {
+                            $mail->$fields__value(trim($part));
+                        }
+                    }
+                } elseif (is_array($recipients__value)) {
+                    if (
+                        isset($recipients__value['email']) &&
+                        $recipients__value['email'] != '' &&
+                        isset($recipients__value['name']) &&
+                        $recipients__value['name'] != ''
+                    ) {
+                        $mail->$fields__value($recipients__value['email'], $recipients__value['name']);
+                    } elseif (isset($recipients__value['email']) && $recipients__value['email'] != '') {
+                        $mail->$fields__value($recipients__value['email']);
+                    }
+                }
+            }
+        }
+
+        $images = [];
+        preg_match_all('/src="([^"]*)"/i', $content, $images);
+        $images = array_unique($images[1]);
+        foreach ($images as $images__value) {
+            if (strpos($images__value, 'cid:') !== false || strpos($images__value, 'http') === 0) {
+                continue;
+            }
+            $is_absolute_local_image =
+                (strpos($images__value, '/') === 0 || preg_match('/^[A-Za-z]:[\\\\\\/]/', $images__value) === 1) &&
+                file_exists($images__value);
+            $image_cid = md5($images__value);
+
+            $image_extension = $images__value;
+            if (strpos($images__value, 'base64,') !== false) {
+                if (strpos($images__value, 'image/png') !== false) {
+                    $image_extension = 'png';
+                } else {
+                    $image_extension = 'jpg';
+                }
+            } else {
+                $image_extension = explode('.', $image_extension);
+                $image_extension = $image_extension[count($image_extension) - 1];
+            }
+
+            $image_baseurl = $_SERVER['DOCUMENT_ROOT'] ?? '';
+
+            $image_tmp_path = sys_get_temp_dir() . '/' . md5(uniqid()) . '.' . $image_extension;
+
+            if (strpos($images__value, 'base64,') !== false) {
+                file_put_contents(
+                    $image_tmp_path,
+                    base64_decode(
+                        trim(substr($images__value, strpos($images__value, 'base64,') + strlen('base64')))
+                    )
+                );
+                $content = str_replace($images__value, 'cid:' . $image_cid, $content);
+                $mail->addEmbeddedImage($image_tmp_path, $image_cid);
+            } elseif ($is_absolute_local_image === true) {
+                $content = str_replace($images__value, 'cid:' . $image_cid, $content);
+                $mail->addEmbeddedImage($images__value, $image_cid);
+            } elseif (file_exists($image_baseurl . '/' . $images__value)) {
+                $content = str_replace($images__value, 'cid:' . $image_cid, $content);
+                $mail->addEmbeddedImage($image_baseurl . '/' . $images__value, $image_cid);
+            }
+        }
+
+        $mail->Subject = $subject;
+        $mail->Body = $content;
+        $mail->AltBody = $content_plain ?? strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\r\n", $content));
+        if ($attachments !== null) {
+            if (!is_array($attachments) || isset($attachments['file'])) {
+                $attachments = [$attachments];
+            }
+            if (!empty($attachments)) {
+                foreach ($attachments as $attachments__value) {
+                    if (is_string($attachments__value) && $attachments__value != '') {
+                        $attachments__value = self::checkAndFormatAttachment($attachments__value);
+                        $mail->addAttachment($attachments__value);
+                    } elseif (is_array($attachments__value)) {
+                        if (
+                            isset($attachments__value['file']) &&
+                            $attachments__value['file'] != '' &&
+                            isset($attachments__value['name']) &&
+                            $attachments__value['name'] != ''
+                        ) {
+                            $attachments__value['file'] = self::checkAndFormatAttachment(
+                                $attachments__value['file']
+                            );
+                            $mail->addAttachment($attachments__value['file'], $attachments__value['name']);
+                        } elseif (
+                            isset($attachments__value['file']) &&
+                            $attachments__value['file'] != '' &&
+                            file_exists($attachments__value['file'])
+                        ) {
+                            $attachments__value['file'] = self::checkAndFormatAttachment(
+                                $attachments__value['file']
+                            );
+                            $mail->addAttachment($attachments__value['file']);
+                        }
+                    }
+                }
+            }
+        }
+        return $mail;
+    }
+
+    /**
+     * Save an HTML email as a draft in the auto-detected IMAP Drafts folder.
+     *
+     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
+     * @param string $subject Email subject (required)
+     * @param string $content HTML email content (required)
+     * @param string|array $to Recipients (required)
+     * @param string|array|null $cc CC recipients (optional)
+     * @param string|array|null $bcc BCC recipients (optional)
+     * @param string|null $from_name Display name for the From header (optional)
+     * @param string|array|null $attachments Attachment paths or [{name,file}] objects (optional)
+     * @param string|null $content_plain Plain-text alternative body (optional)
+     * @return bool True when the draft was successfully appended.
+     * @throws \Exception On IMAP failure, build failure, or when the Drafts folder cannot be located.
+     */
+    #[
+        McpTool(
+            name: 'save_draft',
+            description: 'Save an HTML email as a draft in the IMAP Drafts folder. Same parameters as send_mail. The Drafts folder is auto-detected by name (Drafts, Entwürfe, INBOX.Drafts, [Gmail]/Drafts, …).'
+        )
+    ]
+    public function saveDraft(
+        string $mailbox,
+        string $subject,
+        string $content,
+        #[Schema(type: 'string')] string|array $to,
+        #[Schema(type: 'string')] string|array|null $cc = null,
+        #[Schema(type: 'string')] string|array|null $bcc = null,
+        #[Schema(type: 'string')] ?string $from_name = null,
+        #[Schema(type: 'string')] string|array|null $attachments = null,
+        #[Schema(type: 'string')] ?string $content_plain = null
+    ): bool {
+        $to = self::parseJsonParam($to);
+        $cc = self::parseJsonParam($cc);
+        $bcc = self::parseJsonParam($bcc);
+        $attachments = self::parseJsonParam($attachments);
+        $this->validateInput('saveDraft', get_defined_vars());
+
+        $mail = $this->buildMessage($mailbox, $subject, $content, $to, $cc, $bcc, $from_name, $attachments, $content_plain);
+        if (!$mail->preSend()) {
+            throw new \Exception('Could not build draft. Mailer Error: ' . ($mail->ErrorInfo ?? '-'));
+        }
+        $rfc822 = $mail->getSentMIMEMessage();
+
+        $settings = $this->setupSettings($mailbox);
+        $cm = new ClientManager();
+        $client = $cm->make($settings);
+        $client->connect();
+        try {
+            $drafts = self::findDraftsFolder($client);
+            $drafts->appendMessage($rfc822, ['\\Draft'], \Carbon\Carbon::now());
+            return true;
+        } finally {
+            $client->disconnect();
+        }
+    }
+
+    /**
+     * Send an existing draft via SMTP, then expunge it from the auto-detected Drafts folder.
+     *
+     * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
+     * @param string $id Message-ID of the draft to send (required)
+     * @return bool True when the draft was sent and removed.
+     * @throws \Exception On IMAP failure, missing draft, or SMTP failure.
+     */
+    #[
+        McpTool(
+            name: 'send_draft',
+            description: 'Send an existing draft via SMTP and remove it from the auto-detected Drafts folder. Specify mailbox + draft message-id.'
+        )
+    ]
+    public function sendDraft(string $mailbox, string $id): bool
+    {
+        $this->validateInput('sendDraft', get_defined_vars());
+        $settings = $this->setupSettings($mailbox);
+        $cm = new ClientManager();
+        $client = $cm->make($settings);
+        $client->connect();
+        $temp_attachment_paths = [];
+        try {
+            $sourceFolder = self::findDraftsFolder($client);
+            $message = self::findMessageByMessageId($sourceFolder, $id);
+            if (!$message) {
+                throw new \Exception('Draft id not found: ' . $id);
+            }
+
+            $subject = (string) ($message->getSubject() ?? '');
+            $to = self::imapAddressesToArray($message->getTo());
+            $cc = self::imapAddressesToArray($message->getCc());
+            $bcc = self::imapAddressesToArray($message->getBcc());
+            $content = (string) ($message->getHTMLBody() ?: $message->getTextBody() ?: '');
+            $content_plain = $message->getTextBody();
+            $content_plain = $content_plain !== '' ? (string) $content_plain : null;
+
+            $from_name = null;
+            $from = $message->getFrom();
+            if (is_array($from) && !empty($from)) {
+                $first = $from[0] ?? null;
+                if (is_object($first) && isset($first->personal) && $first->personal !== '') {
+                    $from_name = (string) $first->personal;
+                }
+            }
+
+            // skip inline cid: attachments — they're already in the HTML body
+            $attachments = [];
+            foreach ($message->getAttachments() as $attachment) {
+                $disposition = strtolower((string) $attachment->disposition);
+                if ($disposition === 'inline') {
+                    continue;
+                }
+                $tmp_path = sys_get_temp_dir() . '/mailhelper_draft_' . uniqid() . '_' . basename((string) $attachment->name);
+                if (@file_put_contents($tmp_path, $attachment->getContent()) === false) {
+                    throw new \Exception('Failed to stage draft attachment: ' . $attachment->name);
+                }
+                $temp_attachment_paths[] = $tmp_path;
+                $attachments[] = ['file' => $tmp_path, 'name' => (string) $attachment->name];
+            }
+
+            $mail = $this->buildMessage($mailbox, $subject, $content, $to, $cc, $bcc, $from_name, $attachments ?: null, $content_plain);
+            try {
+                $mail->send();
+            } catch (\Exception $e) {
+                throw new \Exception(
+                    'Draft could not be sent. (' . $e->getMessage() . ') - Mailer Error: ' . ($mail->ErrorInfo ?? '-')
+                );
+            }
+
+            $message->delete(true);
+            return true;
+        } finally {
+            foreach ($temp_attachment_paths as $tmp) {
+                @unlink($tmp);
+            }
+            $client->disconnect();
+        }
+    }
+
+    // INBOX-prefixed variants come first — providers that use the INBOX
+    // namespace also expose top-level aliases that would otherwise shadow them.
+    private static function findDraftsFolder(\Webklex\PHPIMAP\Client $client): \Webklex\PHPIMAP\Folder
+    {
+        $candidates = [
+            'INBOX.Drafts', 'INBOX/Drafts',
+            'INBOX.Entwürfe', 'INBOX/Entwürfe',
+            '[Gmail]/Drafts', '[Gmail]/Entwürfe',
+            'Drafts', 'Entwürfe', 'Draft'
+        ];
+        $folders = $client->getFolders(false);
+        $available = [];
+        foreach ($folders as $f) {
+            $encoded = $f->full_name;
+            $decoded = self::decodeImapUtf7($encoded);
+            $available[$encoded] = $f;
+            $available[$decoded] = $f;
+        }
+        foreach ($candidates as $candidate) {
+            if (isset($available[$candidate])) {
+                return $available[$candidate];
+            }
+        }
+        foreach ($available as $name => $folder) {
+            $needle = mb_strtolower($name);
+            if (mb_strpos($needle, 'draft') !== false || mb_strpos($needle, 'entwurf') !== false || mb_strpos($needle, 'entwürf') !== false) {
+                return $folder;
+            }
+        }
+        throw new \Exception(
+            'Could not locate the Drafts folder. Available folders: ' .
+                implode(', ', array_unique(array_keys($available)))
+        );
+    }
+
+    private static function imapAddressesToArray($value): array
+    {
+        $out = [];
+        if (!is_iterable($value)) {
+            return $out;
+        }
+        foreach ($value as $addr) {
+            $email = is_object($addr) ? (string) ($addr->mail ?? $addr->mailbox ?? '') : '';
+            $name = is_object($addr) ? (string) ($addr->personal ?? '') : '';
+            if ($email === '' && is_object($addr) && isset($addr->full)) {
+                $email = (string) $addr->full;
+            }
+            if ($email === '') {
+                continue;
+            }
+            $out[] = ['email' => $email, 'name' => $name];
+        }
+        return $out;
     }
 
     /**
@@ -1084,6 +1291,8 @@ class mailhelper
         $actions = [
             'fetch-mails',
             'send-mail',
+            'save-draft',
+            'send-draft',
             'view-mail',
             'move-mail',
             'delete-mail',
@@ -1184,6 +1393,27 @@ class mailhelper
                     from_name: $options['from_name'] ?? null,
                     attachments: $attachments ?? null,
                     content_plain: $options['content_plain'] ?? null
+                );
+            }
+
+            if ($action === 'save-draft') {
+                $response = $mailhelper->saveDraft(
+                    mailbox: $options['mailbox'] ?? null,
+                    subject: $options['subject'] ?? null,
+                    content: $options['content'] ?? null,
+                    to: $to ?? null,
+                    cc: $cc ?? null,
+                    bcc: $bcc ?? null,
+                    from_name: $options['from_name'] ?? null,
+                    attachments: $attachments ?? null,
+                    content_plain: $options['content_plain'] ?? null
+                );
+            }
+
+            if ($action === 'send-draft') {
+                $response = $mailhelper->sendDraft(
+                    mailbox: $options['mailbox'] ?? null,
+                    id: $options['id'] ?? null
                 );
             }
 
@@ -1409,10 +1639,15 @@ class mailhelper
         if (!isset($this->config[$args['mailbox']])) {
             throw new \Exception('Mailbox not found in configuration: ' . $args['mailbox']);
         }
-        if (!isset($this->config[$args['mailbox']][$action === 'sendMail' ? 'smtp' : 'imap'])) {
-            throw new \Exception('Configuration not found for mailbox: ' . $args['mailbox']);
+        $needs_smtp = in_array($action, ['sendMail', 'saveDraft', 'sendDraft'], true);
+        $needs_imap = $action !== 'sendMail';
+        if ($needs_smtp && !isset($this->config[$args['mailbox']]['smtp'])) {
+            throw new \Exception('Missing SMTP configuration for mailbox: ' . $args['mailbox']);
         }
-        if ($action === 'sendMail') {
+        if ($needs_imap && !isset($this->config[$args['mailbox']]['imap'])) {
+            throw new \Exception('Missing IMAP configuration for mailbox: ' . $args['mailbox']);
+        }
+        if ($action === 'sendMail' || $action === 'saveDraft') {
             if (!($args['subject'] ?? null)) {
                 throw new \Exception('Missing subject.');
             }
@@ -1421,6 +1656,11 @@ class mailhelper
             }
             if (!($args['to'] ?? null)) {
                 throw new \Exception('Missing to.');
+            }
+        }
+        if ($action === 'sendDraft') {
+            if (!($args['id'] ?? null)) {
+                throw new \Exception('Missing id.');
             }
         }
         if ($action === 'viewMail') {

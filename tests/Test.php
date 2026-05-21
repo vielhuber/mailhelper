@@ -82,6 +82,77 @@ class Test extends \PHPUnit\Framework\TestCase
             }
             //$this->log($this->mailhelper->getFolders(mailbox: $mailboxes__value));
 
+            // saveDraft/sendDraft
+            $draft_subject = 'DRAFT TEST 🚧 ' . mt_rand(1000, 9999);
+            $draft_content = '✏️ Draft <strong>test</strong>! ' . mt_rand(1000, 9999);
+            $response = $this->mailhelper->saveDraft(
+                mailbox: $mailboxes__value,
+                subject: $draft_subject,
+                content: $draft_content,
+                to: $mailboxes__value,
+                from_name: 'John Doee'
+            );
+            $this->assertTrue($response);
+            $this->sleep();
+            $drafts_folder = $this->determineDraftsFolder($mailboxes__value);
+            $this->assertNotNull($drafts_folder, 'Drafts folder could not be determined');
+            $response = $this->mailhelper->fetchMails(
+                mailbox: $mailboxes__value,
+                folder: $drafts_folder,
+                filter: ['subject' => 'DRAFT TEST'],
+                limit: 50,
+                order: 'desc'
+            );
+            $draft_id = null;
+            foreach ($response['items'] as $items__value) {
+                if ($items__value->subject === $draft_subject) {
+                    $draft_id = $items__value->id;
+                    break;
+                }
+            }
+            $this->assertNotNull($draft_id, 'Saved draft not found in ' . $drafts_folder);
+            $this->sleep();
+            $response = $this->mailhelper->sendDraft(mailbox: $mailboxes__value, id: $draft_id);
+            $this->assertTrue($response);
+            $this->sleep();
+            $response = $this->mailhelper->fetchMails(
+                mailbox: $mailboxes__value,
+                folder: $drafts_folder,
+                filter: ['subject' => 'DRAFT TEST'],
+                limit: 50,
+                order: 'desc'
+            );
+            $still_there = false;
+            foreach ($response['items'] as $items__value) {
+                if ($items__value->subject === $draft_subject) {
+                    $still_there = true;
+                    break;
+                }
+            }
+            $this->assertFalse($still_there, 'Draft still present in ' . $drafts_folder . ' after sendDraft');
+            $response = $this->mailhelper->fetchMails(
+                mailbox: $mailboxes__value,
+                folder: $folder_inbox,
+                filter: ['subject' => 'DRAFT TEST'],
+                limit: 50,
+                order: 'desc'
+            );
+            $delivered_id = null;
+            foreach ($response['items'] as $items__value) {
+                if ($items__value->subject === $draft_subject) {
+                    $delivered_id = $items__value->id;
+                    break;
+                }
+            }
+            $this->assertNotNull($delivered_id, 'Sent draft did not arrive in ' . $folder_inbox);
+            $response = $this->mailhelper->deleteMail(
+                mailbox: $mailboxes__value,
+                folder: $folder_inbox,
+                id: $delivered_id
+            );
+            $this->assertTrue($response);
+            $this->sleep();
+
             $test_subject = 'JOOOOOO This is a test! 🚀 ' . mt_rand(1000, 9999);
             $test_content =
                 '✅ Test <strong>successful</strong>! ' .
@@ -197,11 +268,7 @@ class Test extends \PHPUnit\Framework\TestCase
             $this->assertSame($response->id, $mail_id);
 
             // deleteMail
-            $response = $this->mailhelper->deleteMail(
-                mailbox: $mailboxes__value,
-                folder: $folder_other,
-                id: $mail_id
-            );
+            $response = $this->mailhelper->deleteMail(mailbox: $mailboxes__value, folder: $folder_other, id: $mail_id);
             $this->assertTrue($response);
             $this->sleep();
 
@@ -241,6 +308,38 @@ class Test extends \PHPUnit\Framework\TestCase
             }
         }
         return [$folder_inbox, $folder_other];
+    }
+
+    private function determineDraftsFolder($mailbox): ?string
+    {
+        $folders = $this->mailhelper->getFolders(mailbox: $mailbox)['items'];
+        $candidates = [
+            'INBOX.Drafts',
+            'INBOX/Drafts',
+            'INBOX.Entwürfe',
+            'INBOX/Entwürfe',
+            '[Gmail]/Drafts',
+            '[Gmail]/Entwürfe',
+            'Drafts',
+            'Entwürfe',
+            'Draft'
+        ];
+        foreach ($candidates as $candidate) {
+            if (in_array($candidate, $folders, true)) {
+                return $candidate;
+            }
+        }
+        foreach ($folders as $folder) {
+            $needle = mb_strtolower($folder);
+            if (
+                mb_strpos($needle, 'draft') !== false ||
+                mb_strpos($needle, 'entwurf') !== false ||
+                mb_strpos($needle, 'entwürf') !== false
+            ) {
+                return $folder;
+            }
+        }
+        return null;
     }
 
     private function sleep()
