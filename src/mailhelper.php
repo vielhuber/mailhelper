@@ -533,7 +533,7 @@ class mailhelper
         $temp_attachment_paths = [];
         try {
             $sourceFolder = self::findDraftsFolder($client);
-            $message = self::findMessageByMessageId($sourceFolder, $id);
+            $message = self::findMessageByMessageId($sourceFolder, $id, true);
             if (!$message) {
                 throw new \Exception('Draft id not found: ' . $id);
             }
