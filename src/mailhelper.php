@@ -547,12 +547,9 @@ class mailhelper
             $content_plain = $content_plain !== '' ? (string) $content_plain : null;
 
             $from_name = null;
-            $from = $message->getFrom();
-            if (is_array($from) && !empty($from)) {
-                $first = $from[0] ?? null;
-                if (is_object($first) && isset($first->personal) && $first->personal !== '') {
-                    $from_name = (string) $first->personal;
-                }
+            $from_list = self::imapAddressesToArray($message->getFrom());
+            if (!empty($from_list) && ($from_list[0]['name'] ?? '') !== '') {
+                $from_name = $from_list[0]['name'];
             }
 
             // skip inline cid: attachments — they're already in the HTML body
@@ -626,20 +623,29 @@ class mailhelper
 
     private static function imapAddressesToArray($value): array
     {
-        $out = [];
-        if (!is_iterable($value)) {
-            return $out;
+        // webklex's getTo()/getCc()/getBcc()/getFrom() return Attribute
+        // objects (ArrayAccess but not Iterator) — foreach over them iterates
+        // the object's public properties, not the contained addresses. The
+        // ->toArray() exposes the actual list of Address objects.
+        if (is_object($value) && method_exists($value, 'toArray')) {
+            $value = $value->toArray();
         }
+        if (!is_array($value)) {
+            return [];
+        }
+        $out = [];
         foreach ($value as $addr) {
-            $email = is_object($addr) ? (string) ($addr->mail ?? $addr->mailbox ?? '') : '';
-            $name = is_object($addr) ? (string) ($addr->personal ?? '') : '';
-            if ($email === '' && is_object($addr) && isset($addr->full)) {
-                $email = (string) $addr->full;
+            if (!is_object($addr)) {
+                continue;
+            }
+            $email = (string) ($addr->mail ?? '');
+            if ($email === '' && isset($addr->mailbox, $addr->host) && $addr->mailbox !== '' && $addr->host !== '') {
+                $email = $addr->mailbox . '@' . $addr->host;
             }
             if ($email === '') {
                 continue;
             }
-            $out[] = ['email' => $email, 'name' => $name];
+            $out[] = ['email' => $email, 'name' => (string) ($addr->personal ?? '')];
         }
         return $out;
     }
