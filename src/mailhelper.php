@@ -51,7 +51,7 @@ class mailhelper
     #[
         McpTool(
             name: 'fetch_mails',
-            description: 'Fetch email headers from a mailbox folder. Supports structured filtering, limit (default 50) and sort order. Returns {count, items} envelope with date-sorted results.'
+            description: 'Fetch email headers from a mailbox folder. Supports structured filtering, limit (default 50) and sort order. Returns {count, items} envelope with date-sorted results. Keep progress false for MCP calls.'
         )
     ]
     public function fetchMails(
@@ -82,7 +82,9 @@ class mailhelper
         ]
         ?array $filter = null,
         #[Schema(type: 'integer', minimum: 1)] ?int $limit = 50,
-        #[Schema(type: 'string', enum: ['asc', 'desc'])] ?string $order = null
+        #[Schema(type: 'string', enum: ['asc', 'desc'])] ?string $order = null,
+        #[Schema(type: 'boolean', description: 'Show CLI progress output. Keep false for MCP calls.')]
+        bool $progress = false
     ): array {
         $filter = self::parseJsonParam($filter);
         $this->validateInput('fetchMails', get_defined_vars());
@@ -93,6 +95,7 @@ class mailhelper
         $order_str =
             $order !== null && in_array(mb_strtolower($order), ['asc', 'desc']) ? mb_strtolower($order) : 'desc';
         $fix_order = $this->config[$mailbox]['imap']['fix_order'] ?? false;
+        $show_progress = self::isCli() && $progress === true;
 
         $cm = new ClientManager([
             'date_format' => 'd-M-Y',
@@ -171,7 +174,7 @@ class mailhelper
                     foreach ($messages as $messages__value) {
                         $mail = self::getMailDataBasic($messages__value);
                         $mails[] = $mail;
-                        if (self::isCli()) {
+                        if ($show_progress) {
                             self::progress(count($mails), $full_count, 'Fetching emails...');
                         }
                     }
@@ -188,7 +191,7 @@ class mailhelper
                 foreach ($messages as $messages__value) {
                     $mail = self::getMailDataBasic($messages__value);
                     $mails[] = $mail;
-                    if (self::isCli()) {
+                    if ($show_progress) {
                         self::progress(count($mails), $full_count, 'Fetching emails...');
                     }
                 }
@@ -209,7 +212,7 @@ class mailhelper
                 }
             }
 
-            if (self::isCli()) {
+            if ($show_progress) {
                 echo PHP_EOL;
             }
 
@@ -1164,7 +1167,9 @@ class mailhelper
                     folder: $options['folder'] ?? null,
                     filter: !empty($filter) ? $filter : null,
                     limit: isset($options['limit']) ? (int) $options['limit'] : 50,
-                    order: $options['order'] ?? null
+                    order: $options['order'] ?? null,
+                    progress: ($options['progress'] ?? false) === true ||
+                        in_array(mb_strtolower((string) ($options['progress'] ?? '')), ['1', 'true', 'yes', 'on'], true)
                 );
             }
 

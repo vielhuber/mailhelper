@@ -94,7 +94,8 @@ vi config.json
     --filter-to "pattern" \
     --filter-cc "pattern" \
     --limit 42 \
-    --order "desc"
+    --order "desc" \
+    --progress
 
 ./vendor/bin/mailhelper.php send-mail \
     --mailbox "xxx@tld.com" \
@@ -181,7 +182,8 @@ $mailhelper->fetchMails(
         'cc' => 'pattern'
     ],
     limit: 42,
-    order: 'asc'
+    order: 'asc',
+    progress: false
 );
 
 $mailhelper->sendMail(
