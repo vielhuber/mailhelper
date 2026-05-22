@@ -20,6 +20,6 @@
         "src/mcp-server.php"
     ],
     "require-dev": {
-        "phpunit/phpunit": ">=6.5"
+        "phpunit/phpunit": "^13"
     }
 }
