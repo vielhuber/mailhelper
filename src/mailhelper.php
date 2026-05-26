@@ -97,7 +97,7 @@ class mailhelper
         $fix_order = $this->config[$mailbox]['imap']['fix_order'] ?? false;
         $show_progress = self::isCli() && $progress === true;
 
-        $cm = new ClientManager([
+        $cm = self::createClientManager([
             'date_format' => 'd-M-Y',
             'options' => [
                 'unescaped_search_dates' => true
@@ -497,7 +497,7 @@ class mailhelper
         $rfc822 = $mail->getSentMIMEMessage();
 
         $settings = $this->setupSettings($mailbox);
-        $cm = new ClientManager();
+        $cm = self::createClientManager();
         $client = $cm->make($settings);
         $client->connect();
         try {
@@ -527,7 +527,7 @@ class mailhelper
     {
         $this->validateInput('sendDraft', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
-        $cm = new ClientManager();
+        $cm = self::createClientManager();
         $client = $cm->make($settings);
         $client->connect();
         $temp_attachment_paths = [];
@@ -688,7 +688,7 @@ class mailhelper
         $this->validateInput('viewMail', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
 
-        $cm = new ClientManager();
+        $cm = self::createClientManager();
         $client = $cm->make($settings);
         $client->connect();
         try {
@@ -815,7 +815,7 @@ class mailhelper
         $this->validateInput('moveMail', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
 
-        $cm = new ClientManager();
+        $cm = self::createClientManager();
         $client = $cm->make($settings);
         $client->connect();
         try {
@@ -880,7 +880,7 @@ class mailhelper
         $this->validateInput('deleteMail', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
 
-        $cm = new ClientManager();
+        $cm = self::createClientManager();
         $client = $cm->make($settings);
         $client->connect();
         try {
@@ -913,7 +913,7 @@ class mailhelper
         $this->validateInput('readMail', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
 
-        $cm = new ClientManager();
+        $cm = self::createClientManager();
         $client = $cm->make($settings);
         $client->connect();
         try {
@@ -946,7 +946,7 @@ class mailhelper
         $this->validateInput('unreadMail', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
 
-        $cm = new ClientManager();
+        $cm = self::createClientManager();
         $client = $cm->make($settings);
         $client->connect();
         try {
@@ -975,7 +975,7 @@ class mailhelper
         $this->validateInput('quota', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
 
-        $cm = new ClientManager();
+        $cm = self::createClientManager();
         $client = $cm->make($settings);
         $client->connect();
         try {
@@ -1016,7 +1016,7 @@ class mailhelper
         $this->validateInput('getFolders', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
 
-        $cm = new ClientManager();
+        $cm = self::createClientManager();
         $client = $cm->make($settings);
         $client->connect();
         try {
@@ -1060,7 +1060,7 @@ class mailhelper
         $this->validateInput('createFolder', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
 
-        $cm = new ClientManager();
+        $cm = self::createClientManager();
         $client = $cm->make($settings);
         $client->connect();
         try {
@@ -1094,7 +1094,7 @@ class mailhelper
         $this->validateInput('renameFolder', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
 
-        $cm = new ClientManager();
+        $cm = self::createClientManager();
         $client = $cm->make($settings);
         $client->connect();
         try {
@@ -1126,7 +1126,7 @@ class mailhelper
         $this->validateInput('deleteFolder', get_defined_vars());
         $settings = $this->setupSettings($mailbox);
 
-        $cm = new ClientManager();
+        $cm = self::createClientManager();
         $client = $cm->make($settings);
         $client->connect();
         try {
@@ -1611,6 +1611,12 @@ class mailhelper
             return $value; // Return original string if not valid JSON
         }
         return $decoded;
+    }
+
+    private static function createClientManager(array $config = []): ClientManager
+    {
+        $config['options'] = array_merge($config['options'] ?? [], ['rfc822' => false]);
+        return new ClientManager($config);
     }
 
     private static function progress(
