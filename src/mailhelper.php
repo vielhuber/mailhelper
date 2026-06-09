@@ -104,8 +104,8 @@ class mailhelper
             ]
         ]);
         $client = $cm->make($settings);
-        $client->connect();
         try {
+            self::connectClient($client);
             $sourceFolder = self::findFolderOrFail($client, $folder);
 
             $query = $sourceFolder->query();
@@ -499,8 +499,8 @@ class mailhelper
         $settings = $this->setupSettings($mailbox);
         $cm = self::createClientManager();
         $client = $cm->make($settings);
-        $client->connect();
         try {
+            self::connectClient($client);
             $drafts = self::findDraftsFolder($client);
             $drafts->appendMessage($rfc822, ['\\Draft'], \Carbon\Carbon::now());
             return true;
@@ -529,9 +529,9 @@ class mailhelper
         $settings = $this->setupSettings($mailbox);
         $cm = self::createClientManager();
         $client = $cm->make($settings);
-        $client->connect();
         $temp_attachment_paths = [];
         try {
+            self::connectClient($client);
             $sourceFolder = self::findDraftsFolder($client);
             $message = self::findMessageByMessageId($sourceFolder, $id, true);
             if (!$message) {
@@ -690,8 +690,8 @@ class mailhelper
 
         $cm = self::createClientManager();
         $client = $cm->make($settings);
-        $client->connect();
         try {
+            self::connectClient($client);
             $sourceFolder = self::findFolderOrFail($client, $folder);
             $message = self::findMessageByMessageId($sourceFolder, $id, true);
             if (!$message) {
@@ -817,8 +817,8 @@ class mailhelper
 
         $cm = self::createClientManager();
         $client = $cm->make($settings);
-        $client->connect();
         try {
+            self::connectClient($client);
             $folders = $client->getFolders(false);
             $allNames = [];
             $decodedOnly = [];
@@ -882,8 +882,8 @@ class mailhelper
 
         $cm = self::createClientManager();
         $client = $cm->make($settings);
-        $client->connect();
         try {
+            self::connectClient($client);
             $sourceFolder = self::findFolderOrFail($client, $folder);
             $message = self::findMessageByMessageId($sourceFolder, $id);
             if (!$message) {
@@ -915,8 +915,8 @@ class mailhelper
 
         $cm = self::createClientManager();
         $client = $cm->make($settings);
-        $client->connect();
         try {
+            self::connectClient($client);
             $sourceFolder = self::findFolderOrFail($client, $folder);
             $message = self::findMessageByMessageId($sourceFolder, $id);
             if (!$message) {
@@ -948,8 +948,8 @@ class mailhelper
 
         $cm = self::createClientManager();
         $client = $cm->make($settings);
-        $client->connect();
         try {
+            self::connectClient($client);
             $sourceFolder = self::findFolderOrFail($client, $folder);
             $message = self::findMessageByMessageId($sourceFolder, $id);
             if (!$message) {
@@ -977,8 +977,8 @@ class mailhelper
 
         $cm = self::createClientManager();
         $client = $cm->make($settings);
-        $client->connect();
         try {
+            self::connectClient($client);
             $quota = $client->getQuotaRoot('INBOX');
             $items = new \RecursiveIteratorIterator(new \RecursiveArrayIterator($quota));
             $values = iterator_to_array($items, false);
@@ -1018,8 +1018,8 @@ class mailhelper
 
         $cm = self::createClientManager();
         $client = $cm->make($settings);
-        $client->connect();
         try {
+            self::connectClient($client);
             $folders_raw = $client->getFolders(false);
             $folders = [];
             foreach ($folders_raw as $folders_raw__value) {
@@ -1062,8 +1062,8 @@ class mailhelper
 
         $cm = self::createClientManager();
         $client = $cm->make($settings);
-        $client->connect();
         try {
+            self::connectClient($client);
             $client->createFolder($name, false);
             return true;
         } finally {
@@ -1096,8 +1096,8 @@ class mailhelper
 
         $cm = self::createClientManager();
         $client = $cm->make($settings);
-        $client->connect();
         try {
+            self::connectClient($client);
             $sourceFolder = self::findFolderOrFail($client, $name_old);
             $client
                 ->getConnection()
@@ -1128,8 +1128,8 @@ class mailhelper
 
         $cm = self::createClientManager();
         $client = $cm->make($settings);
-        $client->connect();
         try {
+            self::connectClient($client);
             $sourceFolder = self::findFolderOrFail($client, $name);
             $sourceFolder->delete(false);
             return true;
@@ -1617,6 +1617,20 @@ class mailhelper
     {
         $config['options'] = array_merge($config['options'] ?? [], ['rfc822' => false]);
         return new ClientManager($config);
+    }
+
+    private static function connectClient(\Webklex\PHPIMAP\Client $client): void
+    {
+        set_error_handler(static function (int $errno, string $errstr): bool {
+            return in_array($errno, [E_NOTICE, E_WARNING], true) &&
+                str_contains($errstr, 'stream_socket_client()') &&
+                str_contains($errstr, 'Unable to connect');
+        });
+        try {
+            $client->connect();
+        } finally {
+            restore_error_handler();
+        }
     }
 
     private static function progress(
