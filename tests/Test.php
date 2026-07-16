@@ -1,15 +1,16 @@
 <?php
+declare(strict_types=1);
 use vielhuber\mailhelper\mailhelper;
 
 class Test extends \PHPUnit\Framework\TestCase
 {
-    protected $sleep = null;
-    protected $mailhelper = null;
-    protected $mailboxes = [];
+    protected int $sleep = 10;
+    protected mailhelper $mailhelper;
+    protected array $mailboxes = [];
 
     protected function setUp(): void
     {
-        $this->sleep = @$_SERVER['CI'] == 'true' ? 20 : 10;
+        $this->sleep = ($_SERVER['CI'] ?? '') === 'true' ? 20 : 10;
 
         $this->mailhelper = new mailhelper();
 
@@ -19,6 +20,87 @@ class Test extends \PHPUnit\Framework\TestCase
                 $this->mailboxes[] = $config__key;
             }
         }
+    }
+
+    public function test__rejects_numeric_message_id(): void
+    {
+        $mailhelper = new mailhelper(['test@example.com' => ['imap' => []]]);
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('bare numeric values are ambiguous');
+        $mailhelper->viewMail(mailbox: 'test@example.com', folder: 'INBOX', id: '137');
+    }
+
+    public function test__accepts_prefixed_uid(): void
+    {
+        $mailhelper = new mailhelper(['test@example.com' => ['imap' => []]]);
+        $method = new \ReflectionMethod($mailhelper, 'validateInput');
+        $method->invoke($mailhelper, 'viewMail', [
+            'mailbox' => 'test@example.com',
+            'id' => 'uid:137'
+        ]);
+        $this->addToAssertionCount(1);
+    }
+
+    public function test__mail_data_exposes_uid_and_message_id(): void
+    {
+        $message = \Webklex\PHPIMAP\Message::fromString(
+            "From: Test <test@example.com>\r\n" .
+                "To: Demo <demo@example.com>\r\n" .
+                "Date: Thu, 16 Jul 2026 12:00:00 +0200\r\n" .
+                "Subject: Test\r\n" .
+                "Message-ID: <abc@example.com>\r\n\r\nBody"
+        );
+        $message->setUid(137);
+        $method = new \ReflectionMethod(mailhelper::class, 'getMailDataBasic');
+        $mail = $method->invoke(null, $message);
+
+        $this->assertSame('137', $mail->uid);
+        $this->assertSame('abc@example.com', $mail->id);
+    }
+
+    public function test__message_id_lookup_ignores_partial_imap_match(): void
+    {
+        $partialMessage = \Webklex\PHPIMAP\Message::fromString(
+            "Date: Thu, 16 Jul 2026 12:00:00 +0200\r\n" .
+                "Message-ID: <prefix-target@example.com-suffix>\r\n\r\nPartial"
+        );
+        $exactMessage = \Webklex\PHPIMAP\Message::fromString(
+            "Date: Thu, 16 Jul 2026 12:00:00 +0200\r\n" .
+                "Message-ID: <target@example.com>\r\n\r\nExact"
+        );
+        $fastQuery = $this->createStub(\Webklex\PHPIMAP\Query\WhereQuery::class);
+        $fastQuery->method('whereMessageId')->willReturnSelf();
+        $fastQuery->method('leaveUnread')->willReturnSelf();
+        $fastQuery->method('setFetchBody')->willReturnSelf();
+        $fastQuery->method('get')->willReturn(
+            new \Webklex\PHPIMAP\Support\MessageCollection([$partialMessage])
+        );
+        $scanQuery = $this->createStub(\Webklex\PHPIMAP\Query\WhereQuery::class);
+        $scanQuery->method('__call')->willReturnSelf();
+        $scanQuery->method('leaveUnread')->willReturnSelf();
+        $scanQuery->method('setFetchBody')->willReturnSelf();
+        $scanQuery->method('get')->willReturn(
+            new \Webklex\PHPIMAP\Support\MessageCollection([$partialMessage, $exactMessage])
+        );
+        $folder = new class($fastQuery, $scanQuery) extends \Webklex\PHPIMAP\Folder {
+            private array $queries;
+
+            public function __construct(
+                \Webklex\PHPIMAP\Query\WhereQuery $fastQuery,
+                \Webklex\PHPIMAP\Query\WhereQuery $scanQuery
+            ) {
+                $this->queries = [$fastQuery, $scanQuery];
+            }
+
+            public function query(array $extensions = []): \Webklex\PHPIMAP\Query\WhereQuery
+            {
+                return array_shift($this->queries);
+            }
+        };
+        $method = new \ReflectionMethod(mailhelper::class, 'findMessageByMessageId');
+        $message = $method->invoke(null, $folder, 'target@example.com');
+
+        $this->assertSame($exactMessage, $message);
     }
 
     public function test__folders()
@@ -278,17 +360,17 @@ class Test extends \PHPUnit\Framework\TestCase
         }
     }
 
-    private function determinePrefix($mailbox): string
+    private function determinePrefix(string $mailbox): string
     {
         $response = $this->mailhelper->getFolders($mailbox);
         $prefix = 'INBOX.';
-        if (count(array_filter($response['items'], fn($f) => str_starts_with($f, 'INBOX/'))) > 0) {
+        if (count(array_filter($response['items'], fn(string $folder): bool => str_starts_with($folder, 'INBOX/'))) > 0) {
             $prefix = 'INBOX/';
         }
         return $prefix;
     }
 
-    private function determineFolders($mailbox): array
+    private function determineFolders(string $mailbox): array
     {
         $folders = $this->mailhelper->getFolders(mailbox: $mailbox)['items'];
         $folder_inbox = null;
@@ -310,7 +392,7 @@ class Test extends \PHPUnit\Framework\TestCase
         return [$folder_inbox, $folder_other];
     }
 
-    private function determineDraftsFolder($mailbox): ?string
+    private function determineDraftsFolder(string $mailbox): ?string
     {
         $folders = $this->mailhelper->getFolders(mailbox: $mailbox)['items'];
         $candidates = [
@@ -342,18 +424,18 @@ class Test extends \PHPUnit\Framework\TestCase
         return null;
     }
 
-    private function sleep()
+    private function sleep(): void
     {
         if ($this->sleep > 0) {
             sleep($this->sleep);
         }
     }
 
-    private function log($msg)
+    private function log(mixed $message): void
     {
-        if (!is_string($msg)) {
-            $msg = serialize($msg);
+        if (!is_string($message)) {
+            $message = serialize($message);
         }
-        fwrite(STDERR, print_r($msg . PHP_EOL, true));
+        fwrite(STDERR, print_r($message . PHP_EOL, true));
     }
 }

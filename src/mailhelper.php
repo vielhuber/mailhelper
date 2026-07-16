@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 namespace vielhuber\mailhelper;
 
 error_reporting(E_ALL & ~E_DEPRECATED);
@@ -51,7 +52,7 @@ class mailhelper
     #[
         McpTool(
             name: 'fetch_mails',
-            description: 'Fetch email headers from a mailbox folder. Supports structured filtering, limit (default 50) and sort order. Returns {count, items} envelope with date-sorted results. Keep progress false for MCP calls.'
+            description: 'Fetch email headers from a mailbox folder. Supports structured filtering, limit (default 50) and sort order. Returns {count, items} with an RFC Message-ID in items[].id and an IMAP UID in items[].uid; use the exact id for follow-up tools. Keep progress false for MCP calls.'
         )
     ]
     public function fetchMails(
@@ -513,7 +514,7 @@ class mailhelper
      * Send an existing draft via SMTP, then expunge it from the auto-detected Drafts folder.
      *
      * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
-     * @param string $id Message-ID of the draft to send (required)
+     * @param string $id Message-ID or explicit "uid:<value>" reference of the draft to send (required)
      * @return bool True when the draft was sent and removed.
      * @throws \Exception On IMAP failure, missing draft, or SMTP failure.
      */
@@ -621,7 +622,7 @@ class mailhelper
         );
     }
 
-    private static function imapAddressesToArray($value): array
+    private static function imapAddressesToArray(mixed $value): array
     {
         // webklex's getTo()/getCc()/getBcc()/getFrom() return Attribute
         // objects (ArrayAccess but not Iterator) — foreach over them iterates
@@ -672,9 +673,9 @@ class mailhelper
      *
      * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
      * @param string $folder Folder containing the email (required, e.g., 'INBOX')
-     * @param string $id Message-ID of the email to retrieve (required)
+     * @param string $id Message-ID or explicit "uid:<value>" reference of the email to retrieve (required)
      * @param bool $inline_files Also include EML and attachment bytes inline as base64 data URIs (optional, default: false)
-     * @return object Email object with: id, from, to, cc, date, subject, attachments (->name, ->mime_type, ->size, ->path, ->content when inline_files), eml (path string; or data-URI when inline_files), content_html, content_plain, seen
+     * @return object Email object with: id, uid, from, to, cc, date, subject, attachments (->name, ->mime_type, ->size, ->path, ->content when inline_files), eml (path string; or data-URI when inline_files), content_html, content_plain, seen
      * @throws \Exception If folder doesn't exist, message ID not found, or connection fails
      */
     #[
@@ -794,12 +795,12 @@ class mailhelper
     /**
      * Move an email to a different folder.
      *
-     * Moves a single email identified by its Message-ID to a target folder.
+     * Moves a single email identified by its Message-ID or explicit IMAP UID reference to a target folder.
      * Folder names with special characters (umlauts) are automatically encoded to mUTF-7.
      *
      * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
      * @param string $folder Source folder containing the email (required, e.g., 'INBOX')
-     * @param string $id Message-ID of the email to move (required)
+     * @param string $id Message-ID or explicit "uid:<value>" reference of the email to move (required)
      * @param string $name Target folder name (required, e.g., 'Archive', 'INBOX/Subfolder')
      * @return bool True if move was successful
      * @throws \Exception If message ID not found or folder doesn't exist
@@ -865,7 +866,7 @@ class mailhelper
      *
      * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
      * @param string $folder Folder containing the email (required, e.g., 'INBOX')
-     * @param string $id Message-ID of the email to delete (required)
+     * @param string $id Message-ID or explicit "uid:<value>" reference of the email to delete (required)
      * @return bool True if deletion was successful
      * @throws \Exception If message ID not found
      */
@@ -903,7 +904,7 @@ class mailhelper
      *
      * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
      * @param string $folder Folder containing the email (required, e.g., 'INBOX')
-     * @param string $id Message-ID of the email to mark as read (required)
+     * @param string $id Message-ID or explicit "uid:<value>" reference of the email to mark as read (required)
      * @return bool True if flag was set successfully
      * @throws \Exception If message ID not found
      */
@@ -936,7 +937,7 @@ class mailhelper
      *
      * @param string $mailbox Email address of the mailbox (required, must exist in config.json)
      * @param string $folder Folder containing the email (required, e.g., 'INBOX')
-     * @param string $id Message-ID of the email to mark as unread (required)
+     * @param string $id Message-ID or explicit "uid:<value>" reference of the email to mark as unread (required)
      * @return bool True if flag was removed successfully
      * @throws \Exception If message ID not found
      */
@@ -1193,7 +1194,7 @@ class mailhelper
             $query->setFetchBody(false);
         }
         $message = $query->get()->first();
-        if ($message !== null) {
+        if ($message !== null && $message->getMessageId()->toString() === $id) {
             return $message;
         }
         $messages = $folder->query()->all()->leaveUnread()->setFetchBody(false)->get();
@@ -1640,20 +1641,20 @@ class mailhelper
         int $width = 75,
         string $char = '='
     ): void {
-        $perc = round(($done * 100) / $total);
-        if ($perc < 0) {
-            $perc = 0;
+        $percentage = (int) round(($done * 100) / $total);
+        if ($percentage < 0) {
+            $percentage = 0;
         }
-        if ($perc > 100) {
-            $perc = 100;
+        if ($percentage > 100) {
+            $percentage = 100;
         }
-        $bar = round(($width * $perc) / 100);
+        $filledWidth = (int) round(($width * $percentage) / 100);
         echo sprintf(
             "%s[%s%s] %s\r",
             $info != '' ? $info . ' ' : '',
-            str_repeat($char, $bar) . ($perc < 100 ? '>' : ''),
-            $perc == 100 ? $char : str_repeat(' ', $width - $bar),
-            str_pad($perc, 3, ' ', STR_PAD_LEFT) . '%'
+            str_repeat($char, $filledWidth) . ($percentage < 100 ? '>' : ''),
+            $percentage == 100 ? $char : str_repeat(' ', $width - $filledWidth),
+            str_pad((string) $percentage, 3, ' ', STR_PAD_LEFT) . '%'
         );
     }
 
@@ -1672,6 +1673,17 @@ class mailhelper
         }
         if ($needs_imap && !isset($this->config[$args['mailbox']]['imap'])) {
             throw new \Exception('Missing IMAP configuration for mailbox: ' . $args['mailbox']);
+        }
+        if (
+            in_array($action, ['sendDraft', 'viewMail', 'moveMail', 'deleteMail', 'readMail', 'unreadMail'], true) &&
+            isset($args['id'])
+        ) {
+            $id = trim((string) $args['id']);
+            if (ctype_digit($id)) {
+                throw new \InvalidArgumentException(
+                    'Invalid message id: bare numeric values are ambiguous. Use the RFC Message-ID returned as items[].id or prefix an IMAP UID with "uid:".'
+                );
+            }
         }
         if ($action === 'sendMail' || $action === 'saveDraft') {
             if (!($args['subject'] ?? null)) {
