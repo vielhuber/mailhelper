@@ -1781,6 +1781,17 @@ class mailhelper
 
     private function getMicrosoftOAuthToken(string $tenantId, string $clientId, string $clientSecret): string
     {
+        static $microsoftOAuthTokenCache = [];
+
+        $cacheKey = hash(
+            'sha256',
+            implode("\0", [$tenantId, $clientId, hash('sha256', $clientSecret)])
+        );
+        $cachedToken = $microsoftOAuthTokenCache[$cacheKey] ?? null;
+        if ($cachedToken !== null && $cachedToken['expires_at'] > time()) {
+            return $cachedToken['access_token'];
+        }
+
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, 'https://login.microsoftonline.com/' . $tenantId . '/oauth2/v2.0/token');
         curl_setopt(
@@ -1813,6 +1824,12 @@ class mailhelper
         if (!isset($curl_result['access_token'])) {
             throw new \Exception('OAuth: no access_token in response.');
         }
+
+        $expiresIn = max(0, (int) ($curl_result['expires_in'] ?? 3600));
+        $microsoftOAuthTokenCache[$cacheKey] = [
+            'access_token' => $curl_result['access_token'],
+            'expires_at' => time() + max(0, $expiresIn - 60)
+        ];
 
         return $curl_result['access_token'];
     }
