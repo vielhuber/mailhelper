@@ -30,6 +30,15 @@ class Test extends \PHPUnit\Framework\TestCase
         $mailhelper->viewMail(mailbox: 'test@example.com', folder: 'INBOX', id: '137');
     }
 
+    public function test__fetch_mails_searches_all_folders_by_default(): void
+    {
+        $folder = (new \ReflectionMethod(mailhelper::class, 'fetchMails'))->getParameters()[1];
+
+        $this->assertTrue($folder->getType()?->allowsNull());
+        $this->assertTrue($folder->isDefaultValueAvailable());
+        $this->assertNull($folder->getDefaultValue());
+    }
+
     public function test__accepts_prefixed_uid(): void
     {
         $mailhelper = new mailhelper(['test@example.com' => ['imap' => []]]);

@@ -179,7 +179,7 @@ $mailhelper = new mailhelper();
 
 $mailhelper->fetchMails(
     mailbox: 'xxx@tld.com',
-    folder: 'INBOX/foo/bar',
+    folder: 'INBOX/foo/bar', // or null
     filter: [
         'date_from' => date('Y-m-d H:i:s', strtotime('now - 1 hour')),
         'date_until' => date('Y-m-d H:i:s', strtotime('now')),

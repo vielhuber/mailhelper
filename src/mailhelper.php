@@ -44,7 +44,7 @@ class mailhelper
      * (array of mail objects). Use `count` as the authoritative number.
      *
      * @param string $mailbox Email address of the mailbox (must exist in config.json).
-     * @param string $folder Folder name to fetch from (e.g. 'INBOX').
+     * @param string|null $folder Folder name to fetch from (e.g. 'INBOX'). Omit or pass null for every selectable folder.
      * @param array|null $filter Structured filter — properties: date_from, date_until, subject, to. Omit for no filter.
      * @param int|null $limit Maximum number of emails to return. Default 50. Pick a small value (e.g. 10) when the user asks for few mails.
      * @param string|null $order Sort order: 'desc' (newest first, default) or 'asc' (oldest first).
@@ -52,12 +52,12 @@ class mailhelper
     #[
         McpTool(
             name: 'fetch_mails',
-            description: 'Fetch email headers from a mailbox folder. Supports structured filtering, limit (default 50) and sort order. Returns {count, items} with an RFC Message-ID in items[].id and an IMAP UID in items[].uid; use the exact id for follow-up tools. Keep progress false for MCP calls.'
+            description: 'Fetch email headers from one mailbox folder, or from every selectable folder when folder is omitted. Supports structured filtering, a global limit (default 50) and sort order. Returns {count, items}; each item includes its source folder, RFC Message-ID and IMAP UID. Use the exact items[].id and items[].folder for follow-up tools. Keep progress false for MCP calls.'
         )
     ]
     public function fetchMails(
         string $mailbox,
-        string $folder,
+        ?string $folder = null,
         #[
             Schema(
                 type: 'object',
@@ -107,98 +107,107 @@ class mailhelper
         $client = $cm->make($settings);
         try {
             self::connectClient($client);
-            $sourceFolder = self::findFolderOrFail($client, $folder);
+            $allFolders = $folder === null;
+            $sourceFolders = $allFolders
+                ? array_values(array_filter(
+                    iterator_to_array($client->getFolders(false)),
+                    static fn(\Webklex\PHPIMAP\Folder $sourceFolder): bool => $sourceFolder->no_select === false
+                ))
+                : [self::findFolderOrFail($client, $folder)];
+            foreach ($sourceFolders as $sourceFolder) {
+                $query = $sourceFolder->query();
+                $searchQuery = [['ALL']];
+                if ($filter !== null && !empty($filter)) {
+                    $searchQuery = [];
+                    $hasUtf8 = false;
+                    if ($filter['date_from'] ?? null) {
+                        $searchQuery[] = ['SINCE', (new \DateTime((string) $filter['date_from']))->format('d-M-Y')];
+                    }
+                    if ($filter['date_until'] ?? null) {
+                        $searchQuery[] = [
+                            'BEFORE',
+                            (new \DateTime((string) $filter['date_until']))->modify('+1 day')->format('d-M-Y')
+                        ];
+                    }
+                    foreach (
+                        [
+                            'subject' => 'SUBJECT',
+                            'content' => 'BODY',
+                            'from' => 'FROM',
+                            'to' => 'TO',
+                            'cc' => 'CC'
+                        ]
+                        as $filterKey => $criteria
+                    ) {
+                        if (!($filter[$filterKey] ?? null)) {
+                            continue;
+                        }
+                        $value = str_replace(['\\', '"'], ['\\\\', '\\"'], (string) $filter[$filterKey]);
+                        if (preg_match('/[^\x00-\x7F]/u', $value) === 1) {
+                            $hasUtf8 = true;
+                        }
+                        $searchQuery[] = [$criteria, $value];
+                    }
+                    if (empty($searchQuery)) {
+                        $searchQuery = [['ALL']];
+                    }
+                    if ($hasUtf8) {
+                        array_unshift($searchQuery, ['CHARSET UTF-8']);
+                    }
+                }
+                $query->setQuery($searchQuery);
+                $query->leaveUnread();
+                $query->setFetchBody(false);
 
-            $query = $sourceFolder->query();
-            $searchQuery = [['ALL']];
-            if ($filter !== null && !empty($filter)) {
-                $searchQuery = [];
-                $hasUtf8 = false;
-                if ($filter['date_from'] ?? null) {
-                    $searchQuery[] = ['SINCE', (new \DateTime((string) $filter['date_from']))->format('d-M-Y')];
-                }
-                if ($filter['date_until'] ?? null) {
-                    $searchQuery[] = [
-                        'BEFORE',
-                        (new \DateTime((string) $filter['date_until']))->modify('+1 day')->format('d-M-Y')
-                    ];
-                }
-                foreach (
-                    [
-                        'subject' => 'SUBJECT',
-                        'content' => 'BODY',
-                        'from' => 'FROM',
-                        'to' => 'TO',
-                        'cc' => 'CC'
-                    ]
-                    as $filterKey => $criteria
-                ) {
-                    if (!($filter[$filterKey] ?? null)) {
-                        continue;
+                // some imap servers ignore fetch order, so we fetch everything and sort afterwards
+                if ($fix_order) {
+                    $page = 1;
+                    $full_count = null;
+                    $paginator_limit = 10;
+                    while (true) {
+                        if ($full_count !== null && ($page - 1) * $paginator_limit >= $full_count) {
+                            break;
+                        }
+                        try {
+                            $paginator = $query->paginate($paginator_limit, $page, 'imap_page');
+                        } catch (\Throwable $e) {
+                            break;
+                        }
+                        if ($paginator->count() === 0) {
+                            break;
+                        }
+                        $full_count = $paginator->total();
+                        $messages = iterator_to_array($paginator);
+                        foreach ($messages as $messages__value) {
+                            $mail = self::getMailDataBasic($messages__value);
+                            $mail->folder = $sourceFolder->full_name;
+                            $mails[] = $mail;
+                            if ($show_progress && $allFolders === false) {
+                                self::progress(count($mails), $full_count, 'Fetching emails...');
+                            }
+                        }
+                        $page++;
                     }
-                    $value = str_replace(['\\', '"'], ['\\\\', '\\"'], (string) $filter[$filterKey]);
-                    if (preg_match('/[^\x00-\x7F]/u', $value) === 1) {
-                        $hasUtf8 = true;
+                } else {
+                    $query->setFetchOrder($order_str);
+                    if ($limit !== null) {
+                        $query->limit($limit);
                     }
-                    $searchQuery[] = [$criteria, $value];
-                }
-                if (empty($searchQuery)) {
-                    $searchQuery = [['ALL']];
-                }
-                if ($hasUtf8) {
-                    array_unshift($searchQuery, ['CHARSET UTF-8']);
-                }
-            }
-            $query->setQuery($searchQuery);
-            $query->leaveUnread();
-            $query->setFetchBody(false);
+                    $messages = $query->get();
+                    $full_count = $messages->total() ?? $messages->count();
 
-            // some imap servers ignore fetch order, so we fetch everything and sort afterwards
-            if ($fix_order) {
-                $page = 1;
-                $full_count = null;
-                $paginator_limit = 10;
-                while (true) {
-                    if ($full_count !== null && ($page - 1) * $paginator_limit >= $full_count) {
-                        break;
-                    }
-                    try {
-                        $paginator = $query->paginate($paginator_limit, $page, 'imap_page');
-                    } catch (\Throwable $e) {
-                        break;
-                    }
-                    if ($paginator->count() === 0) {
-                        break;
-                    }
-                    $full_count = $paginator->total();
-                    $messages = iterator_to_array($paginator);
                     foreach ($messages as $messages__value) {
                         $mail = self::getMailDataBasic($messages__value);
+                        $mail->folder = $sourceFolder->full_name;
                         $mails[] = $mail;
-                        if ($show_progress) {
+                        if ($show_progress && $allFolders === false) {
                             self::progress(count($mails), $full_count, 'Fetching emails...');
                         }
                     }
-                    $page++;
-                }
-            } else {
-                $query->setFetchOrder($order_str);
-                if ($limit !== null) {
-                    $query->limit($limit);
-                }
-                $messages = $query->get();
-                $full_count = $messages->total() ?? $messages->count();
-
-                foreach ($messages as $messages__value) {
-                    $mail = self::getMailDataBasic($messages__value);
-                    $mails[] = $mail;
-                    if ($show_progress) {
-                        self::progress(count($mails), $full_count, 'Fetching emails...');
-                    }
                 }
             }
 
-            if ($fix_order) {
+            if ($fix_order || count($sourceFolders) > 1) {
                 // apply sort afterwards
                 usort($mails, function ($a, $b) use ($order_str) {
                     if ($order_str === 'asc') {
@@ -213,7 +222,7 @@ class mailhelper
                 }
             }
 
-            if ($show_progress) {
+            if ($show_progress && $allFolders === false) {
                 echo PHP_EOL;
             }
 
