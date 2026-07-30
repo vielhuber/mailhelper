@@ -67,6 +67,39 @@ class Test extends \PHPUnit\Framework\TestCase
         $this->assertSame('abc@example.com', $mail->id);
     }
 
+    public function test__mail_data_decodes_mime_subject(): void
+    {
+        $message = \Webklex\PHPIMAP\Message::fromString(
+            "From: Test <test@example.com>\r\n" .
+                "To: Demo <demo@example.com>\r\n" .
+                "Date: Thu, 16 Jul 2026 12:00:00 +0200\r\n" .
+                "Subject: =?utf-8?Q?Ein_kleiner_Gru=C3=9F_in_Versen?=\r\n" .
+                "Message-ID: <unicode@example.com>\r\n\r\nBody"
+        );
+        $message->setUid(138);
+        $method = new \ReflectionMethod(mailhelper::class, 'getMailDataBasic');
+        $mail = $method->invoke(null, $message);
+
+        $this->assertSame('Ein kleiner Gruß in Versen', $mail->subject);
+    }
+
+    public function test__unicode_search_uses_server_prefilter_and_local_exact_match(): void
+    {
+        $prepare = new \ReflectionMethod(mailhelper::class, 'prepareSearchFilters');
+        [$serverFilters, $localFilters] = $prepare->invoke(null, ['subject' => 'Ein kleiner Gruß in Versen']);
+
+        $this->assertSame('Ein kleiner Gru', $serverFilters['subject']);
+        $this->assertSame(['subject' => 'Ein kleiner Gruß in Versen'], $localFilters);
+
+        $matches = new \ReflectionMethod(mailhelper::class, 'matchesSearchFilters');
+        $this->assertTrue(
+            $matches->invoke(null, (object) ['subject' => 'Re: Ein kleiner Gruß in Versen'], new \stdClass(), $localFilters)
+        );
+        $this->assertFalse(
+            $matches->invoke(null, (object) ['subject' => 'Anderer Betreff'], new \stdClass(), $localFilters)
+        );
+    }
+
     public function test__message_id_lookup_ignores_partial_imap_match(): void
     {
         $partialMessage = \Webklex\PHPIMAP\Message::fromString(

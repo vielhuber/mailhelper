@@ -22,6 +22,8 @@ foreach (
 use PhpMcp\Server\Attributes\McpTool;
 use PhpMcp\Server\Attributes\Schema;
 use Webklex\PHPIMAP\ClientManager;
+use Webklex\PHPIMAP\Exceptions\GetMessagesFailedException;
+use Webklex\PHPIMAP\Exceptions\ImapServerErrorException;
 use PHPMailer\PHPMailer\PHPMailer;
 
 class mailhelper
@@ -108,18 +110,20 @@ class mailhelper
         try {
             self::connectClient($client);
             $allFolders = $folder === null;
+            [$filter, $localFilters] = self::prepareSearchFilters($filter);
             $sourceFolders = $allFolders
                 ? array_values(array_filter(
                     iterator_to_array($client->getFolders(false)),
                     static fn(\Webklex\PHPIMAP\Folder $sourceFolder): bool => $sourceFolder->no_select === false
                 ))
                 : [self::findFolderOrFail($client, $folder)];
+            $successfulFolderSearches = 0;
+            $skippedSearchException = null;
             foreach ($sourceFolders as $sourceFolder) {
                 $query = $sourceFolder->query();
                 $searchQuery = [['ALL']];
                 if ($filter !== null && !empty($filter)) {
                     $searchQuery = [];
-                    $hasUtf8 = false;
                     if ($filter['date_from'] ?? null) {
                         $searchQuery[] = ['SINCE', (new \DateTime((string) $filter['date_from']))->format('d-M-Y')];
                     }
@@ -143,21 +147,15 @@ class mailhelper
                             continue;
                         }
                         $value = str_replace(['\\', '"'], ['\\\\', '\\"'], (string) $filter[$filterKey]);
-                        if (preg_match('/[^\x00-\x7F]/u', $value) === 1) {
-                            $hasUtf8 = true;
-                        }
                         $searchQuery[] = [$criteria, $value];
                     }
                     if (empty($searchQuery)) {
                         $searchQuery = [['ALL']];
                     }
-                    if ($hasUtf8) {
-                        array_unshift($searchQuery, ['CHARSET UTF-8']);
-                    }
                 }
                 $query->setQuery($searchQuery);
                 $query->leaveUnread();
-                $query->setFetchBody(false);
+                $query->setFetchBody(isset($localFilters['content']));
 
                 // some imap servers ignore fetch order, so we fetch everything and sort afterwards
                 if ($fix_order) {
@@ -170,8 +168,12 @@ class mailhelper
                         }
                         try {
                             $paginator = $query->paginate($paginator_limit, $page, 'imap_page');
-                        } catch (\Throwable $e) {
-                            break;
+                        } catch (GetMessagesFailedException|ImapServerErrorException $exception) {
+                            if ($allFolders && self::canSkipFolderSearch($sourceFolder, $exception)) {
+                                $skippedSearchException ??= $exception;
+                                continue 2;
+                            }
+                            throw $exception;
                         }
                         if ($paginator->count() === 0) {
                             break;
@@ -180,6 +182,9 @@ class mailhelper
                         $messages = iterator_to_array($paginator);
                         foreach ($messages as $messages__value) {
                             $mail = self::getMailDataBasic($messages__value);
+                            if (!self::matchesSearchFilters($mail, $messages__value, $localFilters)) {
+                                continue;
+                            }
                             $mail->folder = $sourceFolder->full_name;
                             $mails[] = $mail;
                             if ($show_progress && $allFolders === false) {
@@ -190,14 +195,25 @@ class mailhelper
                     }
                 } else {
                     $query->setFetchOrder($order_str);
-                    if ($limit !== null) {
+                    if ($limit !== null && $localFilters === []) {
                         $query->limit($limit);
                     }
-                    $messages = $query->get();
+                    try {
+                        $messages = $query->get();
+                    } catch (GetMessagesFailedException|ImapServerErrorException $exception) {
+                        if ($allFolders && self::canSkipFolderSearch($sourceFolder, $exception)) {
+                            $skippedSearchException ??= $exception;
+                            continue;
+                        }
+                        throw $exception;
+                    }
                     $full_count = $messages->total() ?? $messages->count();
 
                     foreach ($messages as $messages__value) {
                         $mail = self::getMailDataBasic($messages__value);
+                        if (!self::matchesSearchFilters($mail, $messages__value, $localFilters)) {
+                            continue;
+                        }
                         $mail->folder = $sourceFolder->full_name;
                         $mails[] = $mail;
                         if ($show_progress && $allFolders === false) {
@@ -205,6 +221,10 @@ class mailhelper
                         }
                     }
                 }
+                $successfulFolderSearches++;
+            }
+            if ($successfulFolderSearches === 0 && $skippedSearchException !== null) {
+                throw $skippedSearchException;
             }
 
             if ($fix_order || count($sourceFolders) > 1) {
@@ -221,6 +241,9 @@ class mailhelper
                     $mails = array_slice($mails, 0, $limit);
                 }
             }
+            if (!$fix_order && count($sourceFolders) === 1 && $localFilters !== [] && $limit !== null) {
+                $mails = array_slice($mails, 0, $limit);
+            }
 
             if ($show_progress && $allFolders === false) {
                 echo PHP_EOL;
@@ -229,6 +252,96 @@ class mailhelper
             return ['count' => count($mails), 'items' => $mails];
         } finally {
             $client->disconnect();
+        }
+    }
+
+    private static function prepareSearchFilters(?array $filter): array
+    {
+        if ($filter === null) {
+            return [null, []];
+        }
+        $textFilterKeys = ['subject', 'content', 'from', 'to', 'cc'];
+        $hasUnicodeFilter = false;
+        foreach ($textFilterKeys as $filterKey) {
+            if (preg_match('/[^\x00-\x7F]/u', (string) ($filter[$filterKey] ?? '')) === 1) {
+                $hasUnicodeFilter = true;
+                break;
+            }
+        }
+        if (!$hasUnicodeFilter) {
+            return [$filter, []];
+        }
+        $localFilters = [];
+        $serverCandidates = [];
+        foreach ($textFilterKeys as $filterKey) {
+            $filterValue = (string) ($filter[$filterKey] ?? '');
+            $filter[$filterKey] = '';
+            if ($filterValue === '') {
+                continue;
+            }
+            $localFilters[$filterKey] = $filterValue;
+            foreach (preg_split('/[^\x20-\x7E]+/u', $filterValue) ?: [] as $asciiPart) {
+                $asciiPart = trim($asciiPart);
+                if (mb_strlen($asciiPart) >= 3) {
+                    $serverCandidates[] = ['key' => $filterKey, 'value' => $asciiPart];
+                }
+            }
+        }
+        usort(
+            $serverCandidates,
+            static fn(array $first, array $second): int => mb_strlen($second['value']) <=> mb_strlen($first['value'])
+        );
+        if ($serverCandidates !== []) {
+            $filter[$serverCandidates[0]['key']] = $serverCandidates[0]['value'];
+        }
+        return [$filter, $localFilters];
+    }
+
+    private static function matchesSearchFilters(object $mail, mixed $message, array $localFilters): bool
+    {
+        foreach ($localFilters as $filterKey => $filterValue) {
+            $haystack = '';
+            if ($filterKey === 'subject') {
+                $haystack = $mail->subject;
+            }
+            if (in_array($filterKey, ['from', 'to', 'cc'], true)) {
+                $haystack = (string) json_encode(
+                    $mail->$filterKey,
+                    JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+                );
+            }
+            if ($filterKey === 'content') {
+                $haystack = $message->getTextBody() . "\n" . html_entity_decode(
+                    strip_tags($message->getHTMLBody()),
+                    ENT_QUOTES | ENT_HTML5,
+                    'UTF-8'
+                );
+            }
+            if (mb_stripos($haystack, $filterValue) === false) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static function canSkipFolderSearch(
+        \Webklex\PHPIMAP\Folder $sourceFolder,
+        GetMessagesFailedException|ImapServerErrorException $exception
+    ): bool {
+        $message = mb_strtolower($exception->getMessage());
+        if (!str_contains($message, 'empty response') && !str_contains($message, 'bad command error')) {
+            return false;
+        }
+        try {
+            $probe = $sourceFolder->query();
+            $probe->setQuery([['SUBJECT', '__mailhelper_search_capability_probe__']]);
+            $probe->leaveUnread();
+            $probe->setFetchBody(false);
+            $probe->limit(1);
+            $probe->get();
+            return true;
+        } catch (GetMessagesFailedException|ImapServerErrorException) {
+            return false;
         }
     }
 
@@ -1878,6 +1991,9 @@ class mailhelper
         $subject = preg_replace("/\r\n|\r|\n/", '', trim((string) ($message->getSubject()[0] ?? '')));
         if ($healed !== null && !empty($healed['subject'])) {
             $subject = $healed['subject'];
+        }
+        if (preg_match('/=\?[^?]+\?[bq]\?[^?]+\?=/i', $subject) === 1) {
+            $subject = mb_decode_mimeheader($subject);
         }
         if (mb_detect_encoding($subject, 'UTF-8, ISO-8859-1') !== 'UTF-8') {
             $subject = self::utf8EncodeLegacy($subject);
