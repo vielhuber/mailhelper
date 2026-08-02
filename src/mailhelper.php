@@ -1738,7 +1738,10 @@ class mailhelper
 
     private static function createClientManager(array $config = []): ClientManager
     {
-        $config['options'] = array_merge($config['options'] ?? [], ['rfc822' => false]);
+        $config['options'] = array_merge($config['options'] ?? [], [
+            'rfc822' => false,
+            'fallback_date' => '1970-01-01 00:00:00'
+        ]);
         return new ClientManager($config);
     }
 
@@ -1985,6 +1988,36 @@ class mailhelper
                 $dt->setTimezone(new \DateTimeZone(date_default_timezone_get()));
                 $mail->date = $dt->format('Y-m-d H:i:s');
             } catch (\Exception $e) {
+            }
+        }
+        if (str_starts_with($mail->date, '1970-01-01')) {
+            $rawHeader = $message->getHeader()->raw ?? '';
+            if (is_string($rawHeader) && preg_match('/^Date:\s*([^\r\n]+)/im', $rawHeader, $dateMatch) === 1) {
+                $rawDate = trim($dateMatch[1]);
+                $dateCandidates = [
+                    $rawDate,
+                    preg_replace_callback(
+                        '/\s[+-](\d{1,2}):(\d{2}):(\d{2})(?=\s[+-]\d{4}(?:\s|$))/',
+                        static fn(array $matches) =>
+                            ' ' .
+                            str_pad($matches[1], 2, '0', STR_PAD_LEFT) .
+                            ':' .
+                            $matches[2] .
+                            ':' .
+                            $matches[3],
+                        $rawDate
+                    ),
+                    preg_replace('/\s[+-]?\d{1,2}:\d{2}:\d{2}(?=\s[+-]\d{4}(?:\s|$))/', '', $rawDate)
+                ];
+                foreach (array_unique(array_filter($dateCandidates, 'is_string')) as $dateCandidate) {
+                    try {
+                        $date = new \DateTime($dateCandidate);
+                        $date->setTimezone(new \DateTimeZone(date_default_timezone_get()));
+                        $mail->date = $date->format('Y-m-d H:i:s');
+                        break;
+                    } catch (\Exception $exception) {
+                    }
+                }
             }
         }
 
