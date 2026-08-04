@@ -329,7 +329,7 @@ class mailhelper
         GetMessagesFailedException|ImapServerErrorException $exception
     ): bool {
         $message = mb_strtolower($exception->getMessage());
-        if (!str_contains($message, 'empty response') && !str_contains($message, 'bad command error')) {
+        if (!str_contains($message, 'empty response') && !str_contains($message, 'bad command')) {
             return false;
         }
         try {
