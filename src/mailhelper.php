@@ -699,7 +699,12 @@ class mailhelper
                 );
             }
 
-            $message->delete(true);
+            $message->delete(expunge: false);
+            try {
+                $client->expunge();
+            } catch (\Webklex\PHPIMAP\Exceptions\ImapServerErrorException $e) {
+                // see deleteMail(): server may refuse EXPUNGE intermittently.
+            }
             return true;
         } finally {
             foreach ($temp_attachment_paths as $tmp) {
@@ -1012,7 +1017,16 @@ class mailhelper
             if (!$message) {
                 throw new \Exception('Message id not found: ' . $id);
             }
-            $message->delete();
+            // set \Deleted without immediate EXPUNGE; the server may answer
+            // "NO EXPUNGE failed" intermittently (read-only mailbox, concurrent
+            // session removed the message, store permission quirk). setFlag is
+            // the authoritative delete; physical purge happens on disconnect (CLOSE).
+            $message->delete(expunge: false);
+            try {
+                $client->expunge();
+            } catch (\Webklex\PHPIMAP\Exceptions\ImapServerErrorException $e) {
+                // already flagged \Deleted; ignore sporadic server-side purge refusal.
+            }
             return true;
         } finally {
             $client->disconnect();
