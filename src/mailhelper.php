@@ -21,10 +21,15 @@ foreach (
 
 use PhpMcp\Server\Attributes\McpTool;
 use PhpMcp\Server\Attributes\Schema;
+use Carbon\Carbon;
+use PHPMailer\PHPMailer\OAuthTokenProvider;
+use PHPMailer\PHPMailer\PHPMailer;
+use Webklex\PHPIMAP\Client;
 use Webklex\PHPIMAP\ClientManager;
 use Webklex\PHPIMAP\Exceptions\GetMessagesFailedException;
 use Webklex\PHPIMAP\Exceptions\ImapServerErrorException;
-use PHPMailer\PHPMailer\PHPMailer;
+use Webklex\PHPIMAP\Folder;
+use Webklex\PHPIMAP\Message;
 
 class mailhelper
 {
@@ -114,7 +119,7 @@ class mailhelper
             $sourceFolders = $allFolders
                 ? array_values(array_filter(
                     iterator_to_array($client->getFolders(false)),
-                    static fn(\Webklex\PHPIMAP\Folder $sourceFolder): bool => $sourceFolder->no_select === false
+                    static fn(Folder $sourceFolder): bool => $sourceFolder->no_select === false
                 ))
                 : [self::findFolderOrFail($client, $folder)];
             $successfulFolderSearches = 0;
@@ -325,7 +330,7 @@ class mailhelper
     }
 
     private static function canSkipFolderSearch(
-        \Webklex\PHPIMAP\Folder $sourceFolder,
+        Folder $sourceFolder,
         GetMessagesFailedException|ImapServerErrorException $exception
     ): bool {
         $message = mb_strtolower($exception->getMessage());
@@ -359,7 +364,7 @@ class mailhelper
      * @param string|null $cc CC recipient(s), identical format options as $to: bare email, RFC 5322 'Name <email>', comma-separated list, or JSON array (optional)
      * @param string|null $bcc BCC recipient(s), identical format options as $to: bare email, RFC 5322 'Name <email>', comma-separated list, or JSON array (optional)
      * @param string|null $from_name Sender display name (optional, overrides config if set)
-     * @param string|null $attachments File path or array [{"name": "doc.pdf", "file": "/path/to/file.pdf"}] (optional)
+     * @param string|array|null $attachments File path or array [{"name": "doc.pdf", "file": "/path/to/file.pdf"}] (optional)
      * @param string|null $content_plain Plain-text alternative body (optional, generated from HTML content if omitted)
      * @return bool True if email was sent successfully
      * @throws \Exception If SMTP connection fails or sending fails
@@ -368,7 +373,26 @@ class mailhelper
         McpTool(
             name: 'send_mail',
             description: 'Send an HTML email via SMTP. Recipients accept: bare email "a@b.com", RFC 5322 "Name <a@b.com>", comma-separated list, or JSON array [{"name": "John", "email": "john@example.com"}]. Attachments as path or JSON: [{"name": "doc.pdf", "file": "/path/to/file.pdf"}]. HTML images are embedded automatically. content_plain can override the generated plain-text alternative body.'
-        )
+        ),
+        Schema(properties: [
+            'attachments' => [
+                'type' => ['string', 'array', 'null'],
+                'items' => [
+                    'oneOf' => [
+                        ['type' => 'string'],
+                        [
+                            'type' => 'object',
+                            'properties' => [
+                                'name' => ['type' => 'string'],
+                                'file' => ['type' => 'string']
+                            ],
+                            'required' => ['file'],
+                            'additionalProperties' => false
+                        ]
+                    ]
+                ]
+            ]
+        ])
     ]
     public function sendMail(
         string $mailbox,
@@ -378,7 +402,7 @@ class mailhelper
         #[Schema(type: 'string')] string|array|null $cc = null,
         #[Schema(type: 'string')] string|array|null $bcc = null,
         #[Schema(type: 'string')] ?string $from_name = null,
-        #[Schema(type: 'string')] string|array|null $attachments = null,
+        string|array|null $attachments = null,
         #[Schema(type: 'string')] ?string $content_plain = null
     ): bool {
         $to = self::parseJsonParam($to);
@@ -408,8 +432,8 @@ class mailhelper
         ?string $from_name = null,
         string|array|null $attachments = null,
         ?string $content_plain = null
-    ): \PHPMailer\PHPMailer\PHPMailer {
-        $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+    ): PHPMailer {
+        $mail = new PHPMailer(true);
         $mail->isSMTP();
         $mail->Host = $this->config[$mailbox]['smtp']['host'] ?? null;
         $mail->Port = $this->config[$mailbox]['smtp']['port'] ?? null;
@@ -433,7 +457,7 @@ class mailhelper
                         $this->config[$mailbox]['smtp']['client_id'],
                         $this->config[$mailbox]['smtp']['client_secret']
                     )
-                ) implements \PHPMailer\PHPMailer\OAuthTokenProvider {
+                ) implements OAuthTokenProvider {
                     private string $userEmail;
                     private string $accessToken;
                     public function __construct(string $userEmail, string $accessToken)
@@ -594,7 +618,26 @@ class mailhelper
         McpTool(
             name: 'save_draft',
             description: 'Save an HTML email as a draft in the IMAP Drafts folder. Same parameters as send_mail. The Drafts folder is auto-detected by name (Drafts, Entwürfe, INBOX.Drafts, [Gmail]/Drafts, …).'
-        )
+        ),
+        Schema(properties: [
+            'attachments' => [
+                'type' => ['string', 'array', 'null'],
+                'items' => [
+                    'oneOf' => [
+                        ['type' => 'string'],
+                        [
+                            'type' => 'object',
+                            'properties' => [
+                                'name' => ['type' => 'string'],
+                                'file' => ['type' => 'string']
+                            ],
+                            'required' => ['file'],
+                            'additionalProperties' => false
+                        ]
+                    ]
+                ]
+            ]
+        ])
     ]
     public function saveDraft(
         string $mailbox,
@@ -604,7 +647,7 @@ class mailhelper
         #[Schema(type: 'string')] string|array|null $cc = null,
         #[Schema(type: 'string')] string|array|null $bcc = null,
         #[Schema(type: 'string')] ?string $from_name = null,
-        #[Schema(type: 'string')] string|array|null $attachments = null,
+        string|array|null $attachments = null,
         #[Schema(type: 'string')] ?string $content_plain = null
     ): bool {
         $to = self::parseJsonParam($to);
@@ -625,7 +668,7 @@ class mailhelper
         try {
             self::connectClient($client);
             $drafts = self::findDraftsFolder($client);
-            $drafts->appendMessage($rfc822, ['\\Draft'], \Carbon\Carbon::now());
+            $drafts->appendMessage($rfc822, ['\\Draft'], Carbon::now());
             return true;
         } finally {
             $client->disconnect();
@@ -702,7 +745,7 @@ class mailhelper
             $message->delete(expunge: false);
             try {
                 $client->expunge();
-            } catch (\Webklex\PHPIMAP\Exceptions\ImapServerErrorException $e) {
+            } catch (ImapServerErrorException $e) {
                 // see deleteMail(): server may refuse EXPUNGE intermittently.
             }
             return true;
@@ -716,7 +759,7 @@ class mailhelper
 
     // INBOX-prefixed variants come first — providers that use the INBOX
     // namespace also expose top-level aliases that would otherwise shadow them.
-    private static function findDraftsFolder(\Webklex\PHPIMAP\Client $client): \Webklex\PHPIMAP\Folder
+    private static function findDraftsFolder(Client $client): Folder
     {
         $candidates = [
             'INBOX.Drafts', 'INBOX/Drafts',
@@ -1024,7 +1067,7 @@ class mailhelper
             $message->delete(expunge: false);
             try {
                 $client->expunge();
-            } catch (\Webklex\PHPIMAP\Exceptions\ImapServerErrorException $e) {
+            } catch (ImapServerErrorException $e) {
                 // already flagged \Deleted; ignore sporadic server-side purge refusal.
             }
             return true;
@@ -1300,11 +1343,11 @@ class mailhelper
     // the folder and matching against the *healed* message_id. the heal cost
     // is only paid for messages whose webklex-extracted message_id is empty.
     private static function findMessageByMessageId(
-        \Webklex\PHPIMAP\Folder $folder,
+        Folder $folder,
         string $id,
         bool $fetchBody = false
-    ): ?\Webklex\PHPIMAP\Message {
-        $loadFullMessage = function (\Webklex\PHPIMAP\Message $message) use ($folder, $fetchBody): \Webklex\PHPIMAP\Message {
+    ): ?Message {
+        $loadFullMessage = function (Message $message) use ($folder, $fetchBody): Message {
             if (!$fetchBody) {
                 return $message;
             }
@@ -1354,7 +1397,7 @@ class mailhelper
     // error message that lists the available folders. used by every method that
     // operates on a single folder, so that "folder does not exist" never
     // silently completes with a false-positive return value.
-    private static function findFolderOrFail(\Webklex\PHPIMAP\Client $client, string $folder): \Webklex\PHPIMAP\Folder
+    private static function findFolderOrFail(Client $client, string $folder): Folder
     {
         $folders = $client->getFolders(false);
         $decoded = [];
@@ -1759,7 +1802,7 @@ class mailhelper
         return new ClientManager($config);
     }
 
-    private static function connectClient(\Webklex\PHPIMAP\Client $client): void
+    private static function connectClient(Client $client): void
     {
         set_error_handler(static function (int $errno, string $errstr): bool {
             return in_array($errno, [E_NOTICE, E_WARNING], true) &&

@@ -39,6 +39,16 @@ class Test extends \PHPUnit\Framework\TestCase
         $this->assertNull($folder->getDefaultValue());
     }
 
+    public function test__attachment_tool_schema_accepts_strings_and_arrays(): void
+    {
+        $schemaGenerator = new \PhpMcp\Server\Utils\SchemaGenerator(new \PhpMcp\Server\Utils\DocBlockParser());
+        foreach (['sendMail', 'saveDraft'] as $methodName) {
+            $schema = $schemaGenerator->generate(new \ReflectionMethod(mailhelper::class, $methodName));
+            $this->assertSame(['string', 'array', 'null'], $schema['properties']['attachments']['type']);
+            $this->assertSame(['file'], $schema['properties']['attachments']['items']['oneOf'][1]['required']);
+        }
+    }
+
     public function test__accepts_prefixed_uid(): void
     {
         $mailhelper = new mailhelper(['test@example.com' => ['imap' => []]]);
