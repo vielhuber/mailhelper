@@ -1806,8 +1806,7 @@ class mailhelper
     {
         set_error_handler(static function (int $errno, string $errstr): bool {
             return in_array($errno, [E_NOTICE, E_WARNING], true) &&
-                str_contains($errstr, 'stream_socket_client()') &&
-                str_contains($errstr, 'Unable to connect');
+                str_contains($errstr, 'stream_socket_client()');
         });
         try {
             $client->connect();

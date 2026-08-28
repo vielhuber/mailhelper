@@ -39,6 +39,34 @@ class Test extends \PHPUnit\Framework\TestCase
         $this->assertNull($folder->getDefaultValue());
     }
 
+    public function test__connection_dns_warning_is_suppressed(): void
+    {
+        $mailhelper = new mailhelper([
+            'test@example.com' => [
+                'imap' => [
+                    'host' => 'mailhelper.invalid',
+                    'port' => 993,
+                    'protocol' => 'imap',
+                    'encryption' => 'ssl',
+                    'validate_cert' => false,
+                    'username' => 'test@example.com',
+                    'password' => 'test',
+                    'timeout' => 1
+                ]
+            ]
+        ]);
+        error_clear_last();
+
+        try {
+            $mailhelper->fetchMails(mailbox: 'test@example.com', folder: 'INBOX');
+        } catch (\Webklex\PHPIMAP\Exceptions\ConnectionFailedException) {
+            $this->assertNull(error_get_last());
+            return;
+        }
+
+        $this->fail('Expected the connection to fail.');
+    }
+
     public function test__attachment_tool_schema_accepts_strings_and_arrays(): void
     {
         $schemaGenerator = new \PhpMcp\Server\Utils\SchemaGenerator(new \PhpMcp\Server\Utils\DocBlockParser());
